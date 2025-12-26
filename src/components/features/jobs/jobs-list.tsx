@@ -68,6 +68,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   };
 
   const handleCreateJob = async () => {
+    console.log('Form values:', { clientId, description, workTypeId, amount })
     if (!clientId || !description || !amount) return;
     
     setLoading(true);
@@ -294,7 +295,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFormOpen(false)}>Отмена</Button>
-            <Button onClick={handleCreateJob} loading={loading}>Создать</Button>
+            <Button onClick={handleCreateJob} loading={loading} disabled={!clientId || !description || !amount}>Создать</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

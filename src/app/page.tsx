@@ -1,3 +1,4 @@
+// src/app/page.tsx
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/app/actions/auth';
 import { getDashboardData } from '@/app/actions/dashboard';
@@ -15,7 +16,7 @@ export default async function DashboardPage() {
   
   return (
     <AppLayout isAdmin={currentUser.role === 'admin'} userName={currentUser.full_name}>
-      <DashboardContent data={dashboardData} />
+      <DashboardContent data={dashboardData} currentUser={currentUser} />
     </AppLayout>
   );
 }
