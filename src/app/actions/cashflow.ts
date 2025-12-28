@@ -138,7 +138,13 @@ export async function createPayout(data: {
   if (profile?.role !== 'admin') {
     throw new Error('Только админ может проводить выплаты');
   }
+
+  // Проверяем общий баланс (кассу)
+  const { data: totalBalance } = await supabase.rpc('get_total_balance');
   
+  if (!totalBalance || totalBalance < data.amount) {
+    throw new Error(`Недостаточно средств в кассе. Доступно: ${totalBalance || 0} ₽`);
+  }
   // Проверяем баланс участника
   const { data: balance } = await supabase
     .from('balances')
