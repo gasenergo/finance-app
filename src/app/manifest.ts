@@ -1,6 +1,8 @@
-// src/app/manifest.json/route.ts
-export async function GET() {
-  const manifest = {
+// src/app/manifest.ts
+import type { MetadataRoute } from 'next'
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
     name: 'FinTrack',
     short_name: 'FinTrack',
     description: 'Финансовый учёт студии',
@@ -20,11 +22,5 @@ export async function GET() {
         type: 'image/png',
       },
     ],
-  };
-
-  return new Response(JSON.stringify(manifest), {
-    headers: {
-      'Content-Type': 'application/manifest+json',
-    },
-  });
+  }
 }
