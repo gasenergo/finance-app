@@ -152,12 +152,12 @@ export async function getClients() {
   return data || [];
 }
 
-export async function createClientAction(name: string) {
+export async function createClientAction(name: string, taxRate: number | null = null) {
   const supabase = await createClient();
   
   const { data, error } = await supabase
     .from('clients')
-    .insert({ name })
+    .insert({ name, tax_rate: taxRate })
     .select()
     .single();
   
@@ -168,12 +168,20 @@ export async function createClientAction(name: string) {
   return data;
 }
 
-export async function updateClient(id: string, data: { name: string; is_archived: boolean }) {
+export async function updateClient(id: string, data: { 
+  name: string; 
+  tax_rate: number | null;
+  is_archived: boolean;
+}) {
   const supabase = await createClient();
   
   const { error } = await supabase
     .from('clients')
-    .update(data)
+    .update({
+      name: data.name,
+      tax_rate: data.tax_rate,
+      is_archived: data.is_archived
+    })
     .eq('id', id);
   
   if (error) throw error;

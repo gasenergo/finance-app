@@ -165,11 +165,12 @@ export async function markInvoiceAsPaid(invoiceId: string) {
     throw new Error('Только админ может отмечать оплату');
   }
 
-  // Получаем счёт с работами
+  // Получаем счёт с работами И клиентом
   const { data: invoice } = await supabase
     .from('invoices')
     .select(`
       *,
+      client:clients(id, name, tax_rate),
       jobs:invoice_jobs(
         job:jobs(id, created_by, amount)
       )
@@ -203,10 +204,13 @@ export async function markInvoiceAsPaid(invoiceId: string) {
     rate: p.percentage_rate
   }));
 
-  // Рассчитываем распределение
+  // Определяем ставку налога
+const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
+
+  // Рассчитываем распределение с правильной ставкой
   const distribution = calculateDistribution(
     invoice.total_amount,
-    settings,
+    { ...settings, tax_rate: taxRate },  // ← подставляем ставку клиента
     fund.current_balance,
     mappedParticipants
   );

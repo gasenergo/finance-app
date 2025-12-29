@@ -18,6 +18,7 @@ export interface Profile {
 export interface Client {
   id: string;
   name: string;
+  tax_rate: number | null;
   is_archived: boolean;
   created_at: string;
 }

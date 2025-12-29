@@ -179,10 +179,11 @@ export function AdminPanel({
       {activeTab === 'clients' && (
         <ClientsTab
           clients={clients}
-          onAdd={async (name) => {
+          defaultTaxRate={settings?.tax_rate || 6}
+          onAdd={async (name, taxRate) => {
             setLoading(true);
             try {
-              const newClient = await createClientAction(name);
+              const newClient = await createClientAction(name, taxRate);
               setClients(prev => [...prev, newClient]);
               showSuccess('Клиент добавлен');
             } catch (err) {
@@ -206,6 +207,7 @@ export function AdminPanel({
           loading={loading}
         />
       )}
+
 
       {/* Work Types Tab */}
       {activeTab === 'workTypes' && (
@@ -463,16 +465,20 @@ function ClientsTab({
   clients, 
   onAdd, 
   onUpdate,
-  loading 
+  loading,
+  defaultTaxRate
 }: { 
   clients: Client[];
-  onAdd: (name: string) => void;
-  onUpdate: (id: string, data: { name: string; is_archived: boolean }) => void;
+  onAdd: (name: string, taxRate: number | null) => void;
+  onUpdate: (id: string, data: { name: string; tax_rate: number | null; is_archived: boolean }) => void;
   loading: boolean;
+  defaultTaxRate: number;
 }) {
   const [newName, setNewName] = useState('');
+  const [newTaxRate, setNewTaxRate] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editTaxRate, setEditTaxRate] = useState('');
 
   return (
     <Card>
@@ -485,12 +491,27 @@ function ClientsTab({
             placeholder="Название клиента"
             value={newName}
             onChange={e => setNewName(e.target.value)}
+            className="flex-1"
           />
+          <div className="relative w-32">
+            <Input
+              type="number"
+              placeholder={`${defaultTaxRate}%`}
+              value={newTaxRate}
+              onChange={e => setNewTaxRate(e.target.value)}
+              className="pr-8"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+          </div>
           <Button
             onClick={() => {
               if (newName.trim()) {
-                onAdd(newName.trim());
+                onAdd(
+                  newName.trim(), 
+                  newTaxRate ? parseFloat(newTaxRate) : null
+                );
                 setNewName('');
+                setNewTaxRate('');
               }
             }}
             disabled={!newName.trim() || loading}
@@ -498,6 +519,10 @@ function ClientsTab({
             <Plus className="h-4 w-4" />
           </Button>
         </div>
+        
+        <p className="text-xs text-gray-500">
+          Если не указать ставку — будет использоваться {defaultTaxRate}% из настроек
+        </p>
         
         <div className="space-y-2">
           {clients.map(client => (
@@ -513,11 +538,26 @@ function ClientsTab({
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
                     className="flex-1"
+                    placeholder="Название"
                   />
+                  <div className="relative w-24">
+                    <Input
+                      type="number"
+                      value={editTaxRate}
+                      onChange={e => setEditTaxRate(e.target.value)}
+                      className="pr-8"
+                      placeholder={`${defaultTaxRate}`}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                  </div>
                   <Button
                     size="sm"
                     onClick={() => {
-                      onUpdate(client.id, { name: editName, is_archived: client.is_archived });
+                      onUpdate(client.id, { 
+                        name: editName, 
+                        tax_rate: editTaxRate ? parseFloat(editTaxRate) : null,
+                        is_archived: client.is_archived 
+                      });
                       setEditingId(null);
                     }}
                   >
@@ -529,7 +569,14 @@ function ClientsTab({
                 </div>
               ) : (
                 <>
-                  <span className={client.is_archived ? 'line-through' : ''}>{client.name}</span>
+                  <div className="flex items-center gap-3">
+                    <span className={client.is_archived ? 'line-through' : ''}>
+                      {client.name}
+                    </span>
+                    <Badge variant={client.tax_rate ? 'warning' : 'default'}>
+                      {client.tax_rate ?? defaultTaxRate}%
+                    </Badge>
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       variant="ghost"
@@ -537,6 +584,7 @@ function ClientsTab({
                       onClick={() => {
                         setEditingId(client.id);
                         setEditName(client.name);
+                        setEditTaxRate(client.tax_rate?.toString() || '');
                       }}
                     >
                       <Edit className="h-4 w-4" />
@@ -545,7 +593,8 @@ function ClientsTab({
                       variant="ghost"
                       size="icon"
                       onClick={() => onUpdate(client.id, { 
-                        name: client.name, 
+                        name: client.name,
+                        tax_rate: client.tax_rate,
                         is_archived: !client.is_archived 
                       })}
                     >
