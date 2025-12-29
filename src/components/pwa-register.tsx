@@ -5,10 +5,11 @@ import { useEffect } from 'react';
 
 export function PWARegister() {
   useEffect(() => {
-    if (typeof window !== 'undefined' && 
-        'serviceWorker' in navigator && 
-        process.env.NODE_ENV === 'production') {
-      navigator.serviceWorker.register('/sw.js');
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => console.log('SW зарегистрирован'))
+        .catch((err) => console.log('SW ошибка:', err));
     }
   }, []);
 

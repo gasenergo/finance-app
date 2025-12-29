@@ -9,13 +9,11 @@ const inter = Inter({ subsets: ['latin', 'cyrillic'] });
 export const metadata: Metadata = {
   title: 'FinTrack',
   description: 'Финансовый учёт студии',
+  manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'FinTrack',
-  },
-  formatDetection: {
-    telephone: false,
   },
 };
 
@@ -36,8 +34,6 @@ export default function RootLayout({
     <html lang="ru">
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       <body className={inter.className}>
         <PWARegister />

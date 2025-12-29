@@ -1,8 +1,24 @@
-import type { NextConfig } from "next";
+// next.config.ts
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  reactCompiler: true,
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          {
+            key: 'Content-Type',
+            value: 'application/javascript',
+          },
+          {
+            key: 'Service-Worker-Allowed',
+            value: '/',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
