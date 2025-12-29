@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon,  // ← переименовали
   Users, 
@@ -721,7 +721,7 @@ function CategoriesTab({
   );
 }
 
-// ============ User Dialog ============
+/// ============ User Dialog ============
 function UserDialog({ 
   open, 
   onClose, 
@@ -737,32 +737,46 @@ function UserDialog({
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState(user?.full_name || '');
-  const [role, setRole] = useState<'admin' | 'user'>(user?.role || 'user');
-  const [participantType, setParticipantType] = useState<'partner' | 'percentage' | 'none'>(
-    user?.participant_type || 'none'
-  );
-  const [percentageRate, setPercentageRate] = useState(String(user?.percentage_rate || ''));
-  const [isActive, setIsActive] = useState(user?.is_active ?? true);
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<'admin' | 'user'>('user');
+  const [participantType, setParticipantType] = useState<'partner' | 'percentage' | 'none'>('none');
+  const [percentageRate, setPercentageRate] = useState('');
+  const [isActive, setIsActive] = useState(true);
 
-  // Reset form when user changes
-  useState(() => {
-    if (user) {
-      setFullName(user.full_name);
-      setRole(user.role);
-      setParticipantType(user.participant_type || 'none');
-      setPercentageRate(String(user.percentage_rate || ''));
-      setIsActive(user.is_active);
-    } else {
-      setEmail('');
-      setPassword('');
-      setFullName('');
-      setRole('user');
-      setParticipantType('none');
-      setPercentageRate('');
-      setIsActive(true);
+  // Сброс формы при открытии/закрытии или смене пользователя
+  useEffect(() => {
+    if (open) {
+      if (user) {
+        setFullName(user.full_name);
+        setRole(user.role);
+        setParticipantType(user.participant_type || 'none');
+        setPercentageRate(String(user.percentage_rate || ''));
+        setIsActive(user.is_active);
+        setEmail('');
+        setPassword('');
+      } else {
+        setEmail('');
+        setPassword('');
+        setFullName('');
+        setRole('user');
+        setParticipantType('none');
+        setPercentageRate('');
+        setIsActive(true);
+      }
     }
-  });
+  }, [open, user]);
+
+  const handleSave = () => {
+    onSave({
+      email,
+      password,
+      full_name: fullName,
+      role,
+      participant_type: participantType === 'none' ? null : participantType,
+      percentage_rate: participantType === 'percentage' ? parseFloat(percentageRate) : null,
+      is_active: isActive
+    });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -865,15 +879,7 @@ function UserDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Отмена</Button>
           <Button
-            onClick={() => onSave({
-              email,
-              password,
-              full_name: fullName,
-              role,
-              participant_type: participantType === 'none' ? null : participantType,
-              percentage_rate: participantType === 'percentage' ? parseFloat(percentageRate) : null,
-              is_active: isActive
-            })}
+            onClick={handleSave}
             loading={loading}
             disabled={!fullName || (!user && (!email || !password))}
           >

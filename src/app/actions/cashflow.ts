@@ -122,11 +122,11 @@ export async function createPayout(data: {
   user_id: string;
   amount: number;
   description?: string;
-}) {
+}): Promise<{ data?: TransactionWithRelations; error?: string }> {
   const supabase = await createClient();
   
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
+  if (!user) return { error: 'Не авторизован' };
   
   // Проверяем права админа
   const { data: profile } = await supabase
@@ -136,15 +136,16 @@ export async function createPayout(data: {
     .single();
     
   if (profile?.role !== 'admin') {
-    throw new Error('Только админ может проводить выплаты');
+    return { error: 'Только админ может проводить выплаты' };
   }
-
+  
   // Проверяем общий баланс (кассу)
   const { data: totalBalance } = await supabase.rpc('get_total_balance');
   
-  if (!totalBalance || totalBalance < data.amount) {
-    throw new Error(`Недостаточно средств в кассе. Доступно: ${totalBalance || 0} ₽`);
+  if (totalBalance === null || totalBalance < data.amount) {
+    return { error: `Недостаточно средств в кассе. Доступно: ${totalBalance || 0} ₽` };
   }
+  
   // Проверяем баланс участника
   const { data: balance } = await supabase
     .from('balances')
@@ -153,7 +154,7 @@ export async function createPayout(data: {
     .single();
   
   if (!balance || balance.available_amount < data.amount) {
-    throw new Error('Недостаточно средств на балансе участника');
+    return { error: `Недостаточно средств у участника. Доступно: ${balance?.available_amount || 0} ₽` };
   }
   
   // Получаем имя участника
@@ -180,7 +181,7 @@ export async function createPayout(data: {
     `)
     .single();
   
-  if (error) throw error;
+  if (error) return { error: error.message };
   
   // Уменьшаем баланс участника
   await supabase.rpc('decrement_balance', {
@@ -191,7 +192,7 @@ export async function createPayout(data: {
   revalidatePath('/cashflow');
   revalidatePath('/');
   
-  return transaction;
+  return { data: transaction };
 }
 
 export async function deleteTransaction(id: string) {

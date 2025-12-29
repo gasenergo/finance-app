@@ -149,32 +149,36 @@ export function CashFlowList({
     }
   };
 
-  const handleCreatePayout = async () => {
-    if (!payoutUser || !payoutAmount) {
-      setError('Заполните все поля');
-      return;
-    }
-    
-    setLoading(true);
-    setError('');
-    
-    try {
-      const newTx = await createPayout({
-        user_id: payoutUser,
-        amount: parseFloat(payoutAmount),
-        description: payoutDescription || undefined
-      });
-      
-      setTransactions(prev => [newTx, ...prev]);
-      setPayoutOpen(false);
-      resetPayoutForm();
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка');
-    } finally {
-      setLoading(false);
-    }
-  };
+const handleCreatePayout = async () => {
+  if (!payoutUser || !payoutAmount) {
+    setError('Заполните все поля');
+    return;
+  }
+  
+  setLoading(true);
+  setError('');
+  
+  const result = await createPayout({
+    user_id: payoutUser,
+    amount: parseFloat(payoutAmount),
+    description: payoutDescription || undefined
+  });
+  
+  if (result.error) {
+    setError(result.error);
+    setLoading(false);
+    return;
+  }
+  
+  if (result.data) {
+    setTransactions(prev => [result.data!, ...prev]);
+    setPayoutOpen(false);
+    resetPayoutForm();
+    router.refresh();
+  }
+  
+  setLoading(false);
+};
 
   const handleDelete = async (id: string) => {
     if (!confirm('Удалить транзакцию? Это действие нельзя отменить.')) return;
@@ -488,43 +492,50 @@ export function CashFlowList({
           <DialogHeader>
             <DialogTitle>Выплата участнику</DialogTitle>
           </DialogHeader>
-          
+    
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Участник</label>
-              <Select value={payoutUser} onValueChange={setPayoutUser}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите участника" />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map(member => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.full_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Сумма</label>
-              <Input
-                type="number"
-                value={payoutAmount}
-                onChange={e => setPayoutAmount(e.target.value)}
-                placeholder="50000"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Комментарий (опционально)</label>
-              <Input
-                value={payoutDescription}
-                onChange={e => setPayoutDescription(e.target.value)}
-                placeholder="Аванс за май"
-              />
-            </div>
-          </div>
+            {/* Ошибка внутри диалога */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+      
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Участник</label>
+                  <Select value={payoutUser} onValueChange={setPayoutUser}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите участника" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {members.map(member => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Сумма</label>
+                  <Input
+                    type="number"
+                    value={payoutAmount}
+                    onChange={e => setPayoutAmount(e.target.value)}
+                    placeholder="50000"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Комментарий (опционально)</label>
+                  <Input
+                    value={payoutDescription}
+                    onChange={e => setPayoutDescription(e.target.value)}
+                    placeholder="Аванс за май"
+                  />
+                </div>
+              </div>
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayoutOpen(false)}>Отмена</Button>

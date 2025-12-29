@@ -73,10 +73,10 @@ export async function createUser(data: {
   if (authError) throw authError;
   if (!authData.user) throw new Error('Не удалось создать пользователя');
   
-  // Создаём профиль
+  // Создаём профиль (upsert для обработки дубликатов)
   const { error: profileError } = await adminClient
     .from('profiles')
-    .insert({
+    .upsert({
       id: authData.user.id,
       full_name: data.full_name,
       role: data.role,
@@ -84,13 +84,13 @@ export async function createUser(data: {
       percentage_rate: data.percentage_rate,
       is_active: true
     });
-  
+
   if (profileError) throw profileError;
-  
-  // Создаём начальный баланс
+
+  // Создаём начальный баланс (upsert для обработки дубликатов)
   await adminClient
     .from('balances')
-    .insert({
+    .upsert({
       user_id: authData.user.id,
       available_amount: 0,
       total_earned: 0,
