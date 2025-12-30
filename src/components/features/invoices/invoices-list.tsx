@@ -10,8 +10,7 @@ import {
   XCircle, 
   Trash2, 
   Eye,
-  Filter,
-  MoreVertical
+  Filter
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,7 +24,7 @@ import {
   deleteInvoice 
 } from '@/app/actions/invoices';
 import { formatCurrency } from '@/lib/engine/calculations';
-import type { Invoice, Client, Profile } from '@/types/database';
+import type { Client, Profile } from '@/types/database';
 import type { DistributionBreakdown } from '@/lib/engine/distribution';
 
 interface InvoiceWithRelations {
@@ -51,10 +50,18 @@ interface InvoiceWithRelations {
   }>;
 }
 
+interface ParticipantOption {
+  id: string;
+  full_name: string;
+  participant_type: 'partner' | 'percentage';
+  percentage_rate: number | null;
+}
+
 interface InvoicesListProps {
   initialInvoices: InvoiceWithRelations[];
   clients: Client[];
   currentUser: Profile;
+  participants: ParticipantOption[];
 }
 
 const statusConfig = {
@@ -64,7 +71,7 @@ const statusConfig = {
   cancelled: { label: 'Отменён', variant: 'error' as const, icon: XCircle },
 };
 
-export function InvoicesList({ initialInvoices, clients, currentUser }: InvoicesListProps) {
+export function InvoicesList({ initialInvoices, clients, currentUser, participants }: InvoicesListProps) {
   const router = useRouter();
   const [invoices, setInvoices] = useState(initialInvoices);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -79,6 +86,11 @@ export function InvoicesList({ initialInvoices, clients, currentUser }: Invoices
   // Результат распределения
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdown, setBreakdown] = useState<DistributionBreakdown | null>(null);
+
+  // Диалог оплаты с выбором участников
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<InvoiceWithRelations | null>(null);
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -115,23 +127,34 @@ export function InvoicesList({ initialInvoices, clients, currentUser }: Invoices
     }
   };
 
-  const handleMarkAsPaid = async (invoiceId: string) => {
-    if (!confirm('Отметить счёт как оплаченный? Это запустит распределение прибыли.')) {
-      return;
-    }
+  const handleOpenPaymentDialog = (invoice: InvoiceWithRelations) => {
+    setSelectedInvoiceForPayment(invoice);
+    setSelectedParticipants(new Set(participants.map(p => p.id)));
+    setError('');
+    setPaymentDialogOpen(true);
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!selectedInvoiceForPayment || selectedParticipants.size === 0) return;
     
-    setLoading(invoiceId);
+    setLoading(selectedInvoiceForPayment.id);
     setError('');
     
     try {
-      const result = await markInvoiceAsPaid(invoiceId);
+      const result = await markInvoiceAsPaid(
+        selectedInvoiceForPayment.id, 
+        Array.from(selectedParticipants)
+      );
+      
       setInvoices(prev => prev.map(inv => 
-        inv.id === invoiceId 
+        inv.id === selectedInvoiceForPayment.id 
           ? { ...inv, status: 'paid' as const, paid_at: new Date().toISOString() }
           : inv
       ));
       
-      // Показываем результат распределения
+      setPaymentDialogOpen(false);
+      setSelectedInvoiceForPayment(null);
+      
       if (result.breakdown) {
         setBreakdown(result.breakdown);
         setBreakdownOpen(true);
@@ -143,6 +166,18 @@ export function InvoicesList({ initialInvoices, clients, currentUser }: Invoices
     } finally {
       setLoading(null);
     }
+  };
+
+  const toggleParticipant = (id: string) => {
+    setSelectedParticipants(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
   };
 
   const handleDelete = async (invoiceId: string) => {
@@ -306,7 +341,7 @@ export function InvoicesList({ initialInvoices, clients, currentUser }: Invoices
                           <Button
                             variant="success"
                             size="sm"
-                            onClick={() => handleMarkAsPaid(invoice.id)}
+                            onClick={() => handleOpenPaymentDialog(invoice)}
                             disabled={isLoading}
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />
@@ -397,6 +432,72 @@ export function InvoicesList({ initialInvoices, clients, currentUser }: Invoices
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailsOpen(false)}>
               Закрыть
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Participants Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Оплата счёта {selectedInvoiceForPayment?.invoice_number}</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-500 mb-1">Сумма</p>
+              <p className="text-2xl font-bold">
+                {selectedInvoiceForPayment && formatCurrency(selectedInvoiceForPayment.total_amount)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium mb-3">Участники проекта:</p>
+              <div className="space-y-2">
+                {participants.map(p => (
+                  <label 
+                    key={p.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-gray-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedParticipants.has(p.id)}
+                      onChange={() => toggleParticipant(p.id)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium">{p.full_name}</span>
+                    </div>
+                    <Badge variant={p.participant_type === 'partner' ? 'default' : 'warning'}>
+                      {p.participant_type === 'partner' ? 'Партнёр' : `${p.percentage_rate}%`}
+                    </Badge>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {selectedParticipants.size === 0 && (
+              <p className="text-sm text-red-500">Выберите хотя бы одного участника</p>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleConfirmPayment}
+              disabled={selectedParticipants.size === 0 || loading !== null}
+              loading={loading === selectedInvoiceForPayment?.id}
+            >
+              Подтвердить оплату
             </Button>
           </DialogFooter>
         </DialogContent>

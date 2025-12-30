@@ -1,3 +1,5 @@
+// src/lib/engine/distribution.ts 
+
 import { roundMoney, calculateTax, calculateFundContribution } from './calculations';
 import type { Settings } from '@/types/database';
 
@@ -42,9 +44,15 @@ export function calculateDistribution(
   invoiceAmount: number,
   settings: Settings,
   currentFundBalance: number,
-  participants: Participant[]
+  participants: Participant[],
+  activeParticipantIds?: string[]  // ← новый параметр
 ): DistributionResult {
   const { tax_rate, fund_contribution_rate, fund_limit } = settings;
+
+  // Фильтруем участников если указан список активных
+  const activeParticipants = activeParticipantIds 
+    ? participants.filter(p => activeParticipantIds.includes(p.id))
+    : participants;
 
   const taxAmount = calculateTax(invoiceAmount, tax_rate);
   const afterTax = roundMoney(invoiceAmount - taxAmount);
@@ -58,7 +66,8 @@ export function calculateDistribution(
   const afterFund = roundMoney(afterTax - fundContribution);
   const newFundBalance = roundMoney(currentFundBalance + fundContribution);
 
-  const percentageParticipants = participants.filter(p => p.type === 'percentage');
+  // Процентники — только активные
+  const percentageParticipants = activeParticipants.filter(p => p.type === 'percentage');
   const percentagePayments = percentageParticipants.map(p => ({
     userId: p.id,
     userName: p.full_name,
@@ -68,7 +77,8 @@ export function calculateDistribution(
   const totalPercentage = percentagePayments.reduce((sum, p) => sum + p.amount, 0);
   const afterPercentage = roundMoney(afterFund - totalPercentage);
 
-  const partners = participants.filter(p => p.type === 'partner');
+  // Партнёры — только активные
+  const partners = activeParticipants.filter(p => p.type === 'partner');
   let partnerPayments: { userId: string; userName: string; amount: number }[] = [];
 
   if (partners.length > 0) {

@@ -107,3 +107,10 @@ export interface Balance {
   updated_at: string;
   user?: Profile;
 }
+
+export interface InvoiceParticipant {
+  id: string;
+  invoice_id: string;
+  user_id: string;
+  created_at: string;
+}

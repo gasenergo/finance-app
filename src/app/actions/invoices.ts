@@ -148,7 +148,7 @@ export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | '
   return { success: true };
 }
 
-export async function markInvoiceAsPaid(invoiceId: string) {
+export async function markInvoiceAsPaid(invoiceId: string, participantIds: string[]) {
   const supabase = await createClient();
   
   const { data: { user } } = await supabase.auth.getUser();
@@ -165,7 +165,11 @@ export async function markInvoiceAsPaid(invoiceId: string) {
     throw new Error('Только админ может отмечать оплату');
   }
 
-  // Получаем счёт с работами И клиентом
+  if (participantIds.length === 0) {
+    throw new Error('Выберите хотя бы одного участника');
+  }
+
+  // Получаем счёт с клиентом
   const { data: invoice } = await supabase
     .from('invoices')
     .select(`
@@ -205,14 +209,15 @@ export async function markInvoiceAsPaid(invoiceId: string) {
   }));
 
   // Определяем ставку налога
-const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
+  const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
 
-  // Рассчитываем распределение с правильной ставкой
+  // Рассчитываем распределение только для выбранных участников
   const distribution = calculateDistribution(
     invoice.total_amount,
-    { ...settings, tax_rate: taxRate },  // ← подставляем ставку клиента
+    { ...settings, tax_rate: taxRate },
     fund.current_balance,
-    mappedParticipants
+    mappedParticipants,
+    participantIds  // ← передаём список участников
   );
 
   // Получаем ID категорий
@@ -278,7 +283,15 @@ const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
     });
   }
 
-  // 6. Обновляем статус счёта
+  // 6. Сохраняем участников счёта (для истории)
+  await supabase.from('invoice_participants').insert(
+    participantIds.map(id => ({
+      invoice_id: invoiceId,
+      user_id: id
+    }))
+  );
+
+  // 7. Обновляем статус счёта
   await supabase
     .from('invoices')
     .update({ 
@@ -288,7 +301,7 @@ const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
     })
     .eq('id', invoiceId);
 
-  // 7. Обновляем статус работ
+  // 8. Обновляем статус работ
   const jobIds = invoice.jobs?.map((j: { job: { id: string } }) => j.job.id) || [];
   if (jobIds.length > 0) {
     await supabase
@@ -366,4 +379,17 @@ export async function deleteInvoice(invoiceId: string) {
   revalidatePath('/');
   
   return { success: true };
+}
+
+export async function getParticipantsForPayment() {
+  const supabase = await createClient();
+  
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, full_name, participant_type, percentage_rate')
+    .eq('is_active', true)
+    .not('participant_type', 'is', null)
+    .order('full_name');
+  
+  return data || [];
 }
