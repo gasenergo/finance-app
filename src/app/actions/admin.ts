@@ -41,16 +41,27 @@ export async function updateSettings(data: {
 
 export async function getTeamWithBalances() {
   const supabase = await createClient();
-  
+
   const { data } = await supabase
-    .from('profiles')
-    .select(`
-      *,
-      balance:balances(available_amount, total_earned, total_withdrawn)
-    `)
-    .order('full_name');
-  
-  return data || [];
+    .from('balances')
+    .select('*, user:profiles(*)')
+    .order('available_amount', { ascending: false });
+
+  const team = (data || []).map(b => ({
+    id: b.user.id,
+    full_name: b.user.full_name,
+    role: b.user.role,
+    participant_type: b.user.participant_type,
+    percentage_rate: b.user.percentage_rate,
+    is_active: b.user.is_active,
+    balance: [{
+      available_amount: b.available_amount,
+      total_earned: b.total_earned,
+      total_withdrawn: b.total_withdrawn
+    }]
+  }));
+
+  return team;
 }
 
 export async function createUser(data: {

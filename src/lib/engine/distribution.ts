@@ -45,18 +45,19 @@ export function calculateDistribution(
   settings: Settings,
   currentFundBalance: number,
   participants: Participant[],
-  activeParticipantIds?: string[]  // ← новый параметр
+  activeParticipantIds?: string[]
 ): DistributionResult {
   const { tax_rate, fund_contribution_rate, fund_limit } = settings;
 
-  // Фильтруем участников если указан список активных
   const activeParticipants = activeParticipantIds 
     ? participants.filter(p => activeParticipantIds.includes(p.id))
     : participants;
 
+  // 1. Налог
   const taxAmount = calculateTax(invoiceAmount, tax_rate);
   const afterTax = roundMoney(invoiceAmount - taxAmount);
 
+  // 2. Фонд
   const fundContribution = calculateFundContribution(
     afterTax,
     fund_contribution_rate,
@@ -66,7 +67,7 @@ export function calculateDistribution(
   const afterFund = roundMoney(afterTax - fundContribution);
   const newFundBalance = roundMoney(currentFundBalance + fundContribution);
 
-  // Процентники — только активные
+  // 3. Процентники
   const percentageParticipants = activeParticipants.filter(p => p.type === 'percentage');
   const percentagePayments = percentageParticipants.map(p => ({
     userId: p.id,
@@ -77,7 +78,7 @@ export function calculateDistribution(
   const totalPercentage = percentagePayments.reduce((sum, p) => sum + p.amount, 0);
   const afterPercentage = roundMoney(afterFund - totalPercentage);
 
-  // Партнёры — только активные
+  // 4. Партнеры
   const partners = activeParticipants.filter(p => p.type === 'partner');
   let partnerPayments: { userId: string; userName: string; amount: number }[] = [];
 
@@ -89,12 +90,17 @@ export function calculateDistribution(
       amount: baseShare
     }));
 
+    // Корректировка копеек
     const distributed = partnerPayments.reduce((s, p) => s + p.amount, 0);
     const remainder = roundMoney(afterPercentage - distributed);
     if (remainder !== 0 && partnerPayments.length > 0) {
       partnerPayments[0].amount = roundMoney(partnerPayments[0].amount + remainder);
     }
-  }
+  } 
+  
+  // ВАЖНО: Блока else нет. 
+  // Если партнеров нет, переменная afterPercentage просто никуда не записывается.
+  // Это и есть наши "Свободные деньги".
 
   const allPayments = [...percentagePayments, ...partnerPayments];
   const totalDistributed = allPayments.reduce((s, p) => s + p.amount, 0);
@@ -107,10 +113,11 @@ export function calculateDistribution(
     afterFund,
     percentagePayments,
     partnerPayments,
-    totalDistributed,
+    totalDistributed, // Здесь будет сумма выплат, она может быть меньше чем afterFund
     newFundBalance
   };
 
+  // Транзакции остаются стандартными
   const transactions: TransactionToCreate[] = [
     { type: 'expense', categorySlug: 'tax', description: 'Налог', amount: taxAmount }
   ];

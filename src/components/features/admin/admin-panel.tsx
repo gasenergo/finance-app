@@ -4,12 +4,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
+import {
   Settings as SettingsIcon,  // ← переименовали
-  Users, 
-  Building2, 
-  Briefcase, 
+  Users,
+  Building2,
+  Briefcase,
   FolderOpen,
+  DollarSign,
   Plus,
   Edit,
   Trash2,
@@ -36,6 +37,8 @@ import {
   deleteExpenseCategory
 } from '@/app/actions/admin';
 import { formatCurrency } from '@/lib/engine/calculations';
+import { UserBalanceAdjustments } from './balance-adjustments';
+import { getFreeCashAmount, getFundBalance } from '@/app/actions/adjustments';
 import type { Settings, Client, WorkType, ExpenseCategory } from '@/types/database';
 
 interface TeamMember {
@@ -60,11 +63,15 @@ interface AdminPanelProps {
   categories: ExpenseCategory[];
 }
 
-type Tab = 'settings' | 'team' | 'clients' | 'workTypes' | 'categories';
+type Tab = 'settings' | 'team' | 'clients' | 'workTypes' | 'categories' | 'freeCash';
 
-export function AdminPanel({ 
-  settings: initialSettings, 
-  team: initialTeam, 
+
+
+import { getTeamWithBalances } from '@/app/actions/admin';
+
+export function AdminPanel({
+  settings: initialSettings,
+  team: initialTeam,
   clients: initialClients,
   workTypes: initialWorkTypes,
   categories: initialCategories
@@ -81,6 +88,11 @@ export function AdminPanel({
   const [workTypes, setWorkTypes] = useState(initialWorkTypes);
   const [categories, setCategories] = useState(initialCategories);
 
+  const handleTeamUpdate = async () => {
+    const updatedTeam = await getTeamWithBalances();
+    setTeam(updatedTeam);
+  };
+
   // Dialogs
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<TeamMember | null>(null);
@@ -93,6 +105,7 @@ export function AdminPanel({
     { id: 'clients' as Tab, label: 'Клиенты', icon: Building2 },
     { id: 'workTypes' as Tab, label: 'Виды работ', icon: Briefcase },
     { id: 'categories' as Tab, label: 'Категории', icon: FolderOpen },
+    { id: 'freeCash' as Tab, label: 'Свободные средства', icon: DollarSign },
   ];
 
   const showSuccess = (msg: string) => {
@@ -270,6 +283,17 @@ export function AdminPanel({
             }
           }}
           loading={loading}
+        />
+      )}
+
+      {/* Free Cash Tab */}
+      {activeTab === 'freeCash' && (
+        <FreeCashTab
+          team={team}
+          onSuccess={async () => {
+            // Refresh team balances and free cash
+            await handleTeamUpdate();
+          }}
         />
       )}
 
@@ -941,12 +965,12 @@ function UserDialog({
 }
 
 // ============ Password Dialog ============
-function PasswordDialog({ 
-  open, 
-  onClose, 
+function PasswordDialog({
+  open,
+  onClose,
   onSave,
-  loading 
-}: { 
+  loading
+}: {
   open: boolean;
   onClose: () => void;
   onSave: (password: string) => void;
@@ -961,7 +985,7 @@ function PasswordDialog({
         <DialogHeader>
           <DialogTitle>Сменить пароль</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1.5">Новый пароль</label>
@@ -985,7 +1009,7 @@ function PasswordDialog({
             <p className="text-sm text-red-500">Пароли не совпадают</p>
           )}
         </div>
-        
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Отмена</Button>
           <Button
@@ -1002,5 +1026,94 @@ function PasswordDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ============ Free Cash Tab ============
+function FreeCashTab({
+  team,
+  onSuccess
+}: {
+  team: TeamMember[];
+  onSuccess: () => void;
+}) {
+  const [freeCash, setFreeCash] = useState(0);
+  const [fundBalance, setFundBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    try {
+      const [freeCashAmount, fundAmount] = await Promise.all([
+        getFreeCashAmount(),
+        getFundBalance()
+      ]);
+      setFreeCash(freeCashAmount);
+      setFundBalance(fundAmount);
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdjustmentSuccess = () => {
+    fetchData();
+    onSuccess();
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Корректировка балансов участников</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {team
+              .filter(user => user.is_active)
+              .map(user => (
+                <div
+                  key={user.id}
+                  className="p-4 rounded-lg border bg-white"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{user.full_name}</span>
+                        <Badge variant={user.role === 'admin' ? 'info' : 'default'}>
+                          {user.role === 'admin' ? 'Админ' : 'Юзер'}
+                        </Badge>
+                        {user.participant_type && (
+                          <Badge variant={user.participant_type === 'partner' ? 'success' : 'warning'}>
+                            {user.participant_type === 'partner' ? 'Партнёр' : `${user.percentage_rate}%`}
+                          </Badge>
+                        )}
+                      </div>
+                      {user.balance && user.balance[0] && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          Баланс: {formatCurrency(user.balance[0].available_amount)}
+                        </p>
+                      )}
+                    </div>
+                    <UserBalanceAdjustments
+                      userId={user.id}
+                      userName={user.full_name}
+                      userType={user.participant_type}
+                      currentBalance={user.balance?.[0]?.available_amount || 0}
+                      freeCash={freeCash}
+                      fundBalance={fundBalance}
+                      onSuccess={handleAdjustmentSuccess}
+                    />
+                  </div>
+                </div>
+              ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
