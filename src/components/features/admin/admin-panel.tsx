@@ -1080,7 +1080,7 @@ function FreeCashTab({
                   key={user.id}
                   className="p-4 rounded-lg border bg-white"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{user.full_name}</span>

@@ -73,8 +73,23 @@ export async function giveBonus(userId: string, amount: number) {
 
   if (balanceError) throw balanceError;
 
+  // 4. Создаём запись в cashflow как income
+  const { error: transactionError } = await adminClient
+    .from('transactions')
+    .insert({
+      date: new Date().toISOString().split('T')[0],
+      type: 'income',
+      description: `Премия из фонда`,
+      amount: amount,
+      related_user_id: userId,
+      created_by: user.id
+    });
+
+  if (transactionError) throw transactionError;
+
   revalidatePath('/');
   revalidatePath('/admin');
+  revalidatePath('/cashflow');
 
   return { success: true };
 }
@@ -123,12 +138,31 @@ export async function returnToCompanyPot(userId: string, amount: number) {
 
   if (fundError) throw fundError;
 
+  // Получаем текущего пользователя для записи транзакции
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Не авторизован');
+
+  // Создаём запись в cashflow как income
+  const { error: transactionError } = await adminClient
+    .from('transactions')
+    .insert({
+      date: new Date().toISOString().split('T')[0],
+      type: 'income',
+      description: `Возврат в фонд`,
+      amount: amount,
+      related_user_id: userId,
+      created_by: user.id
+    });
+
+  if (transactionError) throw transactionError;
+
   // Логика:
   // Мы уменьшили долг компании перед юзером и увеличили фонд.
   // Это правильно отражает возврат денег в компанию.
 
   revalidatePath('/');
   revalidatePath('/admin');
+  revalidatePath('/cashflow');
 
   return { success: true };
 }

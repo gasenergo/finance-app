@@ -98,7 +98,7 @@ export function UserBalanceAdjustments({
           className="text-xs h-7 border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800"
           onClick={() => handleAction('return')}
         >
-          - В кассу
+          - В фонд
         </Button>
       </div>
 
