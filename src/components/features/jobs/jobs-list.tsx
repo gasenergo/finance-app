@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Briefcase, FileText, Trash2 } from 'lucide-react';
+import { Plus, Briefcase, FileText, Trash2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { createJob, deleteJob } from '@/app/actions/jobs';
+import { createJob, deleteJob, updateJob } from '@/app/actions/jobs';
 import { createInvoice } from '@/app/actions/invoices';
 import { formatCurrency } from '@/lib/engine/calculations';
 import type { Job, Client, WorkType, Profile } from '@/types/database';
@@ -43,6 +43,9 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   const [customWorkName, setCustomWorkName] = useState('');
   const [amount, setAmount] = useState('');
 
+  // Edit state
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+
   const isAdmin = currentUser.role === 'admin';
 
   const filteredJobs = jobs.filter(job => 
@@ -55,7 +58,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
 
   const handleSelect = (id: string, job: Job) => {
     if (job.status !== 'available') return;
-    
+
     const newSelected = new Set(selectedJobs);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -67,10 +70,38 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setSelectedJobs(newSelected);
   };
 
+  const resetForm = () => {
+    setClientId('');
+    setDescription('');
+    setWorkTypeId('custom');
+    setCustomWorkName('');
+    setAmount('');
+    setEditingJob(null);
+  };
+
+  const openCreateDialog = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const openEditDialog = (job: Job) => {
+    setEditingJob(job);
+    setClientId(job.client_id);
+    setDescription(job.description);
+    setWorkTypeId(job.work_type_id || 'custom');
+    setCustomWorkName(job.custom_work_name || '');
+    setAmount(String(job.amount));
+    setFormOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setFormOpen(false);
+    resetForm();
+  };
+
   const handleCreateJob = async () => {
-    console.log('Form values:', { clientId, description, workTypeId, amount })
     if (!clientId || !description || !amount) return;
-    
+
     setLoading(true);
     try {
       const newJob = await createJob({
@@ -81,8 +112,28 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         amount: parseFloat(amount),
       });
       setJobs(prev => [newJob, ...prev]);
-      setFormOpen(false);
-      resetForm();
+      handleCloseDialog();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateJob = async () => {
+    if (!editingJob || !clientId || !description || !amount) return;
+
+    setLoading(true);
+    try {
+      const updated = await updateJob(editingJob.id, {
+        client_id: clientId,
+        description,
+        work_type_id: workTypeId === 'custom' ? null : workTypeId,
+        custom_work_name: workTypeId === 'custom' ? customWorkName : null,
+        amount: parseFloat(amount),
+      });
+      setJobs(prev => prev.map(j => j.id === updated.id ? updated : j));
+      handleCloseDialog();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка');
     } finally {
@@ -111,19 +162,15 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     }
   };
 
-  const resetForm = () => {
-    setClientId('');
-    setDescription('');
-    setWorkTypeId('custom');
-    setCustomWorkName('');
-    setAmount('');
+  const canEditJob = (job: Job) => {
+    return job.status === 'available' && (job.created_by === currentUser.id || isAdmin);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold">Работы</h1>
-        <Button onClick={() => setFormOpen(true)}>
+        <Button onClick={openCreateDialog}>
           <Plus className="h-4 w-4 mr-2" />
           Новая работа
         </Button>
@@ -147,7 +194,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
           title="Нет работ"
           description="Создайте первую работу"
           action={
-            <Button onClick={() => setFormOpen(true)}>
+            <Button onClick={openCreateDialog}>
               <Plus className="h-4 w-4 mr-2" />
               Создать работу
             </Button>
@@ -159,7 +206,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             const status = statusConfig[job.status];
             const canSelect = job.status === 'available' && 
               (selectedJobs.size === 0 || job.client_id === selectedClientId);
-            
+
             return (
               <Card 
                 key={job.id} 
@@ -172,7 +219,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                       <p className="text-sm text-gray-500">{job.client?.name}</p>
                     </div>
                     {job.status === 'available' && (
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
                         {canSelect && (
                           <input
                             type="checkbox"
@@ -181,8 +228,21 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                             className="h-5 w-5"
                           />
                         )}
+                        {canEditJob(job) && (
+                          <button 
+                            onClick={() => openEditDialog(job)} 
+                            className="text-blue-500 hover:text-blue-700 transition-colors"
+                            title="Редактировать"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
                         {isAdmin && (
-                          <button onClick={() => handleDeleteJob(job.id)} className="text-red-500">
+                          <button 
+                            onClick={() => handleDeleteJob(job.id)} 
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                            title="Удалить"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         )}
@@ -226,10 +286,12 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         </div>
       )}
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      <Dialog open={formOpen} onOpenChange={handleCloseDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Новая работа</DialogTitle>
+            <DialogTitle>
+              {editingJob ? 'Редактировать работу' : 'Новая работа'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -294,8 +356,16 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Отмена</Button>
-            <Button onClick={handleCreateJob} loading={loading} disabled={!clientId || !description || !amount}>Создать</Button>
+            <Button variant="outline" onClick={handleCloseDialog}>
+              Отмена
+            </Button>
+            <Button 
+              onClick={editingJob ? handleUpdateJob : handleCreateJob} 
+              loading={loading} 
+              disabled={!clientId || !description || !amount}
+            >
+              {editingJob ? 'Сохранить' : 'Создать'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
