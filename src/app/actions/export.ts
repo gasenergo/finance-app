@@ -13,13 +13,13 @@ export async function exportTransactionsCSV(): Promise<string> {
       related_user:profiles!transactions_related_user_id_fkey(full_name),
       invoice:invoices!transactions_related_invoice_id_fkey(invoice_number)
     `)
-    .order('date', { ascending: false });
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (!transactions || transactions.length === 0) {
     throw new Error('Нет данных для экспорта');
   }
 
-  // Заголовки CSV
   const headers = [
     'Дата',
     'Тип',
@@ -28,17 +28,15 @@ export async function exportTransactionsCSV(): Promise<string> {
     'Категория',
     'Пользователь',
     'Номер счёта',
-    'Создано'
+    'created_at'
   ];
 
-  // Маппинг типов
   const typeLabels: Record<string, string> = {
     income: 'Доход',
     expense: 'Расход',
     payout: 'Выплата'
   };
 
-  // Строки данных
   const rows = transactions.map(tx => [
     tx.date,
     typeLabels[tx.type] || tx.type,
@@ -47,17 +45,15 @@ export async function exportTransactionsCSV(): Promise<string> {
     tx.category?.name || '',
     tx.related_user?.full_name || '',
     tx.invoice?.invoice_number || '',
-    new Date(tx.created_at).toLocaleString('ru-RU')
+    tx.created_at
   ]);
 
-  // Формируем CSV
   const csvContent = [
     headers.join(';'),
     ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
   ].join('\n');
 
-  // Добавляем BOM для корректного отображения кириллицы в Excel
-  return '\uFEFF' + csvContent;
+  return csvContent;
 }
 
 export async function exportInvoicesCSV(): Promise<string> {
@@ -76,18 +72,16 @@ export async function exportInvoicesCSV(): Promise<string> {
     throw new Error('Нет данных для экспорта');
   }
 
-  // Заголовки CSV
   const headers = [
     'Номер счёта',
-    'Дата создания',
     'Клиент',
     'Сумма',
     'Статус',
-    'Дата оплаты',
-    'Работы'
+    'paid_at',
+    'Работы',
+    'created_at'
   ];
 
-  // Маппинг статусов
   const statusLabels: Record<string, string> = {
     draft: 'Черновик',
     sent: 'Отправлен',
@@ -95,25 +89,22 @@ export async function exportInvoicesCSV(): Promise<string> {
     cancelled: 'Отменён'
   };
 
-  // Строки данных
   const rows = invoices.map(inv => {
-    // Собираем работы в одну строку
     const jobsList = inv.jobs
       ?.map((j: { description: string; amount: number }) => `${j.description} (${j.amount} ₽)`)
       .join('; ') || '';
 
     return [
       inv.invoice_number,
-      new Date(inv.created_at).toLocaleDateString('ru-RU'),
       inv.client?.name || '',
       inv.total_amount,
       statusLabels[inv.status] || inv.status,
-      inv.paid_at ? new Date(inv.paid_at).toLocaleDateString('ru-RU') : '',
-      jobsList
+      inv.paid_at || '',
+      jobsList,
+      inv.created_at
     ];
   });
 
-  // Формируем CSV
   const csvContent = [
     headers.join(';'),
     ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
