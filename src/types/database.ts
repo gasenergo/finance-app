@@ -114,3 +114,17 @@ export interface InvoiceParticipant {
   user_id: string;
   created_at: string;
 }
+
+export interface TeamMember {
+  id: string;
+  full_name: string;
+  role: 'admin' | 'user';
+  participant_type: 'partner' | 'percentage' | null;
+  percentage_rate: number | null;
+  is_active: boolean;
+  balance: Array<{
+    available_amount: number;
+    total_earned: number;
+    total_withdrawn: number;
+  }> | null;
+}

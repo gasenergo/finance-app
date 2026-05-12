@@ -1,6 +1,7 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
+import { formatCurrency } from '@/lib/engine/calculations';
 
 interface FreeCashCardProps {
   amount: number;
@@ -14,7 +15,7 @@ export function FreeCashCard({ amount }: FreeCashCardProps) {
           Нераспределенная прибыль
         </span>
         <span className="text-2xl font-bold text-emerald-900">
-          {new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(amount)}
+          {formatCurrency(amount)}
         </span>
         <p className="text-xs text-emerald-600 mt-2">
           Доступно для бонусов и развития
