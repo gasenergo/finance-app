@@ -96,12 +96,16 @@ export function SettingsTab({
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Лимит фонда (₽)</label>
-            <Input
-              type="number"
-              value={fundLimit}
-              onChange={e => setFundLimit(e.target.value)}
-            />
+            <label className="block text-sm font-medium mb-1.5">Лимит фонда</label>
+            <div className="relative">
+              <Input
+                type="number"
+                value={fundLimit}
+                onChange={e => setFundLimit(e.target.value)}
+                className="pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₽</span>
+            </div>
             <p className="text-xs text-gray-500 mt-1">Отчисления прекратятся при достижении лимита</p>
           </div>
 

@@ -35,13 +35,16 @@ export function WorkTypesTab({
             onChange={e => setNewName(e.target.value)}
             className="flex-1"
           />
-          <Input
-            placeholder="Цена"
-            type="number"
-            value={newPrice}
-            onChange={e => setNewPrice(e.target.value)}
-            className="w-32"
-          />
+          <div className="relative w-32">
+            <Input
+              placeholder="Цена"
+              type="number"
+              value={newPrice}
+              onChange={e => setNewPrice(e.target.value)}
+              className="pr-8"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₽</span>
+          </div>
           <Button
             onClick={() => {
               if (newName.trim()) {

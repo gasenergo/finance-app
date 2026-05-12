@@ -121,13 +121,17 @@ export function UserBalanceAdjustments({
 
             <div className="space-y-2">
               <label className="text-sm font-medium">Сумма</label>
-              <Input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
-                autoFocus
-              />
+              <div className="relative">
+                <Input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0"
+                  className="pr-8"
+                  autoFocus
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₽</span>
+              </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
             </div>
           </div>
