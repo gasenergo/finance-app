@@ -383,18 +383,20 @@ interface MetricCardProps {
 function MetricCard({ title, value, icon: Icon, iconColor, iconBg, subtitle }: MetricCardProps) {
   return (
     <Card>
-      <CardContent className="p-4 lg:p-6">
-        <div className="flex items-start justify-between">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-gray-500 truncate">{title}</p>
-            <p className="text-xl lg:text-2xl font-bold mt-1 truncate">{value}</p>
-            {subtitle && (
-              <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
-            )}
+      <CardContent className="p-3 lg:p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className={`p-1 rounded-md ${iconBg} shrink-0`}>
+            <Icon className={`h-4 w-4 ${iconColor}`} />
           </div>
-          <div className={`p-2 lg:p-3 rounded-lg ${iconBg} shrink-0 ml-2`}>
-            <Icon className={`h-5 w-5 lg:h-6 lg:w-6 ${iconColor}`} />
-          </div>
+          <p className="text-xs lg:text-sm text-gray-500 truncate font-medium">{title}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-lg lg:text-xl font-bold truncate leading-tight">
+            {value}
+          </p>
+          {subtitle && (
+            <p className="text-[10px] lg:text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
+          )}
         </div>
       </CardContent>
     </Card>
