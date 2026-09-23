@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { giveBonus, returnToCompanyPot } from '@/app/actions/adjustments';
+import { formatCurrency } from '@/lib/engine/calculations';
 
 function formatCurrency(val: number): string {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(val);
@@ -30,7 +31,7 @@ export function UserBalanceAdjustments({
   currentBalance,
   fundBalance,
   onSuccess
-}: UserAdjustmentProps) {
+}: Omit<UserAdjustmentProps, 'userType' | 'freeCash'>) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<'bonus' | 'return' | null>(null);
   const [amount, setAmount] = useState('');

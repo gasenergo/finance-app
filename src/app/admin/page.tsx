@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/app/actions/auth';
 import { getSettings, getTeamWithBalances, getAllClients, getAllWorkTypes, getAllExpenseCategories } from '@/app/actions/admin';

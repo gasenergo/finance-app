@@ -42,6 +42,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   const [workTypeId, setWorkTypeId] = useState('custom');
   const [customWorkName, setCustomWorkName] = useState('');
   const [amount, setAmount] = useState('');
+  const [quantity, setQuantity] = useState(1);
 
   // Edit state
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -76,6 +77,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setWorkTypeId('custom');
     setCustomWorkName('');
     setAmount('');
+    setQuantity(1);
     setEditingJob(null);
   };
 
@@ -91,6 +93,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setWorkTypeId(job.work_type_id || 'custom');
     setCustomWorkName(job.custom_work_name || '');
     setAmount(String(job.amount));
+    setQuantity(1);
     setFormOpen(true);
   };
 
@@ -319,6 +322,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
               <label className="block text-sm font-medium mb-1">Тип работы</label>
               <Select value={workTypeId} onValueChange={(v) => {
                 setWorkTypeId(v);
+                setQuantity(1);
                 const wt = workTypes.find(w => w.id === v);
                 if (wt?.default_price) setAmount(String(wt.default_price));
               }}>
@@ -335,13 +339,33 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                 </SelectContent>
               </Select>
             </div>
-            {workTypeId === 'custom' && (
+            {workTypeId === 'custom' ? (
               <div>
                 <label className="block text-sm font-medium mb-1">Название</label>
                 <Input 
                   value={customWorkName} 
                   onChange={e => setCustomWorkName(e.target.value)}
                   placeholder="Консультация"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium mb-1">Количество</label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quantity}
+                  onChange={e => {
+                    const q = parseInt(e.target.value) || 0;
+                    setQuantity(q);
+                    if (q > 0) {
+                      const wt = workTypes.find(w => w.id === workTypeId);
+                      if (wt?.default_price) {
+                        setAmount(String(wt.default_price * q));
+                      }
+                    }
+                  }}
                 />
               </div>
             )}
