@@ -1,36 +1,192 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinTrack — финансовый учёт студии
 
-## Getting Started
+Веб-приложение для учёта финансов небольшой дизайн/разработчичкой студии: работы, счета, распределение выручки между участниками, резервный фонд и касса.
 
-First, run the development server:
+## Возможности
+
+- **Работы** — список задач с клиентом, типом работы и суммой; статусы: «свободная» → «в счёте» → «оплаченная».
+- **Счета** — объединение работ в счёт, статусы «черновик → выставлен → оплачен/отменён», автогенерация номера `INV-XXXX`.
+- **Оплата счёта и распределение выручки** — при оплате выручка автоматически раскладывается: налог → отчисление в резервный фонд → процентникам → партнёрам (равными долями).
+- **Касса (ДДС)** — лента транзакций с running balance, фильтры по типу и месяцу, добавление расходов и выплат участникам, экспорт в CSV.
+- **Резервный фонд** — накопления с лимитом: отчисления прекращаются при достижении лимита.
+- **Балансы участников** — заработано / выведено / доступно; премии из фонда и возврат средств в фонд.
+- **Админка** — настройки (налог, фонд, лимит), управление командой/ролями/процентами, клиенты (с индивидуальной налоговой ставкой), виды работ, категории расходов.
+- **PWA** — устанавливается на телефон, адаптивная вёрстка (sidebar на десктопе, нижняя навигация на мобильных).
+
+## Технологии
+
+- **Next.js 16** (App Router, Server Actions) + **React 19**
+- **Supabase** — Auth, Postgres (RLS), RPC-функции
+- **Tailwind CSS 4** + Radix UI (dialog, select, dropdown)
+- **@tanstack/react-query**, zod
+- TypeScript (strict)
+
+## Требования
+
+- Node.js 20+
+- npm
+- Проект Supabase (url, anon key, service_role key)
+- Все окружение описано в [Переменные окружения](#переменные-окружения)
+
+## Установка и запуск
 
 ```bash
+npm install
+cp .env.example .env.local   # заполните значения
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Продовый запуск:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Переменные окружения
 
-To learn more about Next.js, take a look at the following resources:
+Файл `.env.local` (файл `.env.example` — заготовка):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Переменная | Описание |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL проекта Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Публичный анонимный ключ |
+| `SUPABASE_SERVICE_ROLE_KEY` | Секретный ключ (service_role). **Используется только в server actions, в клиентский бандл не попадает** |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Скрипты
 
-## Deploy on Vercel
+```bash
+npm run dev     # dev-сервер
+npm run build   # продакшен-сборка
+npm start       # продакшен-сервер
+npm run lint    # eslint
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Проверка типов (без сборки):
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx tsc --noEmit
+```
+
+## Структура проекта
+
+```
+src/
+├── app/
+│   ├── actions/            # Server Actions (вся бизнес-логика и запросы к БД)
+│   │   ├── admin.ts        #   настройки, команда, клиенты, виды работ, категории
+│   │   ├── adjustments.ts  #   премии и возвраты в фонд
+│   │   ├── auth.ts         #   текущий пользователь
+│   │   ├── cashflow.ts     #   транзакции, расходы, выплаты
+│   │   ├── dashboard.ts    #   агрегированные данные для главной
+│   │   ├── export.ts       #   экспорт CSV
+│   │   ├── invoices.ts     #   счета и отметка оплаты
+│   │   ├── jobs.ts         #   работы
+│   │   └── references.ts   #   справочники (активные записи)
+│   ├── admin/              # страница админки
+│   ├── cashflow/           # касса
+│   ├── invoices/           # счета
+│   ├── jobs/               # работы
+│   ├── login/              # вход
+│   ├── layout.tsx, page.tsx, manifest.ts
+│   └── globals.css
+├── components/
+│   ├── features/           # бизнес-компоненты страниц
+│   ├── layout/             # sidebar, нижняя навигация, оболочка
+│   └── ui/                 # переиспользуемые UI-компоненты
+├── lib/
+│   ├── auth.ts             # проверка прав (requireAdmin)
+│   ├── csv.ts              # скачивание CSV (UTF-8 BOM для Excel)
+│   ├── engine/             # чистая логика расчётов (тестируемая)
+│   │   ├── calculations.ts #   округление, налог, отчисления в фонд
+│   │   ├── distribution.ts #   распределение выручки между участниками
+│   │   └── validators.ts   #   zod-схемы
+│   ├── supabase/           # клиенты: server / client / admin (service_role)
+│   └── utils.ts            # cn(), toISODate()
+├── middleware.ts           # защита маршрутов, редирект на /login
+└── types/database.ts       # типы таблиц БД
+```
+
+## Финансовая логика
+
+При оплате счёта сумма раскладывается по шагам (`src/lib/engine/distribution.ts`):
+
+1. **Налог** — процент от суммы счёта (ставка клиента, если задана, иначе глобальная).
+2. **Резервный фонд** — процент от суммы после налога, но не больше оставшегося до лимита фонда.
+3. **Процентники** — своей долей от суммы после фонда.
+4. **Партнёры** — остаток поровну (разница в копейках отдаётся первому партнёру).
+
+Если партнёры не выбраны — остаток остаётся в кассе как «свободные средства».
+
+Все расчёты идут в **копейках с округлением** (`roundMoney`), поэтому балансы всегда сходятся с транзакциями.
+
+## Роли и права
+
+| Действие | user | admin |
+|---|---|---|
+| Создать/редактировать свои свободные работы | ✓ | ✓ |
+| Создать счёт из работ | ✓ | ✓ |
+| Сменить статус счёта / отметить оплату / удалить счёт | — | ✓ |
+| Распределять премии и возвраты в фонд | — | ✓ |
+| Расходы, выплаты, удаление транзакций | — | ✓ |
+| Настройки, команда, клиенты, справочники | — | ✓ |
+
+Права **проверяются на сервере** в каждой server action через `requireAdmin()` (`src/lib/auth.ts`) — скрытие кнопок в UI является только косметическим слоем.
+
+## Что нужно в Supabase
+
+### Таблицы
+
+Используются таблицы (согласно типам в `src/types/database.ts` и запросам):
+
+`profiles`, `balances`, `clients`, `work_types`, `expense_categories`, `settings`, `fund`, `jobs`, `invoices`, `invoice_jobs`, `invoice_participants`, `transactions`.
+
+Рекомендуется включить **Row Level Security (RLS)**:
+- `profiles` — читают авторизованные; право менять `role`/`participant_type`/`percentage_rate` должно быть **только у админа** (иначе возможна эскалация привилегий — см. `updateUser`).
+- остальные таблицы — по политике приложения; ключевые записи делает только админ.
+
+### Функции (RPC)
+
+Приложение вызывает следующие функции:
+
+| Функция | Сигнатура | Назначение |
+|---|---|---|
+| `increment_balance` | `p_user_id uuid, p_amount numeric` | Начислить на баланс участника |
+| `decrement_balance` | `p_user_id uuid, p_amount numeric` | Списать с баланса участника (не ниже 0) |
+| `decrement_fund` | `p_amount numeric` | Списать из резервного фонда |
+| `get_total_balance` | —→ `numeric` | Общая касса (фонд + ...) |
+| `get_accounts_receivable` | —→ `numeric` | Сумма выставленных, но не оплаченных счетов |
+
+Эти функции должны атомарно обновлять `balances.available_amount / total_earned / total_withdrawn` и `fund.current_balance`.
+
+## Известные ограничения
+
+- **Атомарность оплаты счёта.** Server action `markInvoiceAsPaid` выполняет несколько записей через Supabase JS. На случай сбоя есть откат фонда и балансов, но идеальное решение — единая Postgres-функция (весь процесс оплаты в одной транзакции БД), вызываемая одним `rpc()`. Рекомендуется перенести шаги 1–8 в транзакцию на стороне БД.
+- **Гонка при премиях/возвратах в фонд.** Проверка «достаточно ли средств» и списание — два отдельных запроса. При очень быстрых двойных кликах фонд может временно уйти в минус. Исправляется guarded-RPC в БД.
+- **Номер счёта** генерируется на основе максимума существующих номеров. При одновременном создании двух счетов возможен дубликат — для строгой гарантии нужна sequence в БД.
+
+## Счета: шаблоны документов
+
+Экспорт счёта («Счета» → детали счёта → **Word** / **PDF**) собирается из **редактируемых шаблонов**:
+
+| Файл | Назначение |
+|---|---|
+| `public/templates/invoice.docx` | Word-бланк. Открывается в Microsoft Word: меняйте шрифты, кегль, формулировки. Динамические места помечены плейсхолдерами `{number}`, `{client}`, `{total}`, строки таблицы — циклом `{FOR i IN items}`…`{END-FOR i}` с полями `{$i.description}`, `{$i.unit}`, `{$i.qty}`, `{$i.price}`, `{$i.sum}` |
+| `public/templates/invoice.html` | PDF-бланк (печать). Редактируется в любом текстовом редакторе: CSS-блок в начале файла, плейсхолдеры `{{number}}`, `{{client}}`, `{{total}}`, цикл строк `{{#items}}`…`{{/items}}` |
+| `src/lib/invoice-config.ts` | Реквизиты вашей организации (название, ИНН, банк, ФИО руководителя и т.д.) |
+
+Правила:
+- Плейсхолдеры **не удаляйте** — в них подставляются данные. Их список закреплён в `src/lib/invoice-doc.ts` (`buildTemplateData`).
+- Формулировки, шрифты, таблицу, блок подписей меняйте свободно.
+- После правок шаблона перезапустите dev-сервер (шаблоны кэшируются на время сессии).
+- Если полностью пересобрали `invoice.docx` «с нуля» — можно сгенерировать заново стартовый вариант: `npm run make:template`.
+
+## Бэкап
+
+В админке (вкладка «Настройки») есть экспорт:
+- **Скачать ДДС** — все транзакции в CSV;
+- **Скачать счета** — все счета с работами в CSV.
+
+CSV записывается в UTF-8 с BOM и корректно открывается в Excel. Рекомендуется делать бэкап регулярно (например, раз в неделю).

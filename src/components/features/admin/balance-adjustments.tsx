@@ -12,12 +12,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { giveBonus, returnToCompanyPot } from '@/app/actions/adjustments';
 
+function formatCurrency(val: number): string {
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(val);
+}
+
 interface UserAdjustmentProps {
   userId: string;
   userName: string;
-  userType: 'partner' | 'percentage' | null;
   currentBalance: number;
-  freeCash: number;
   fundBalance: number;
   onSuccess?: () => void;
 }
@@ -25,9 +27,7 @@ interface UserAdjustmentProps {
 export function UserBalanceAdjustments({
   userId,
   userName,
-  userType,
   currentBalance,
-  freeCash,
   fundBalance,
   onSuccess
 }: UserAdjustmentProps) {
@@ -77,9 +77,6 @@ export function UserBalanceAdjustments({
       setIsLoading(false);
     }
   };
-
-  const formatCurrency = (val: number) => 
-    new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(val);
 
   return (
     <>

@@ -8,4 +8,7 @@ export const createJobSchema = z.object({
   amount: z.number().positive('Сумма должна быть больше 0'),
 });
 
+export const updateJobSchema = createJobSchema.partial();
+
 export type CreateJobInput = z.infer<typeof createJobSchema>;
+export type UpdateJobInput = z.infer<typeof updateJobSchema>;

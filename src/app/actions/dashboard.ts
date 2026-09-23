@@ -75,10 +75,10 @@ export async function getDashboardData(): Promise<DashboardData> {
         .order('available_amount', { ascending: false }),
       supabase
         .from('transactions')
-        .select('*, category:expense_categories(name), related_user:profiles(full_name)')
+        .select('*, category:expense_categories(name), related_user:profiles!transactions_related_user_id_fkey(full_name)')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
-        .limit(10),
+        .limit(5),
       supabase
         .from('transactions')
         .select('type, amount'),

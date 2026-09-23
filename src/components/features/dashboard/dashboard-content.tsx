@@ -35,7 +35,6 @@ export function DashboardContent({ data, currentUser }: DashboardContentProps) {
   } = data;
 
   const fundPercentage = Math.min((fund.current_balance / fundLimit) * 100, 100);
-  const isAdmin = currentUser.role === 'admin';
 
   return (
     <div className="space-y-6">

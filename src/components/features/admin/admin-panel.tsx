@@ -1,11 +1,10 @@
 // src/components/features/admin/admin-panel.tsx
-// Замени импорты в начале файла:
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import {
-  Settings as SettingsIcon,  // ← переименовали
+  Settings as SettingsIcon,
   Users,
   Building2,
   Briefcase,
@@ -17,7 +16,9 @@ import {
   Key,
   Save,
   X,
-  Download
+  Download,
+  Archive,
+  RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,7 +26,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { 
+import {
+  getTeamWithBalances,
   updateSettings,
   createUser,
   updateUser,
@@ -39,9 +41,11 @@ import {
 } from '@/app/actions/admin';
 import { formatCurrency } from '@/lib/engine/calculations';
 import { UserBalanceAdjustments } from './balance-adjustments';
-import { getFreeCashAmount, getFundBalance } from '@/app/actions/adjustments';
+import { getFundBalance } from '@/app/actions/adjustments';
 import type { Settings, Client, WorkType, ExpenseCategory } from '@/types/database';
 import { exportTransactionsCSV, exportInvoicesCSV } from '@/app/actions/export';
+import { downloadCSV } from '@/lib/csv';
+import { toISODate } from '@/lib/utils';
 
 interface TeamMember {
   id: string;
@@ -57,6 +61,16 @@ interface TeamMember {
   }> | null;
 }
 
+interface UserFormData {
+  email: string;
+  password: string;
+  full_name: string;
+  role: 'admin' | 'user';
+  participant_type: 'partner' | 'percentage' | null;
+  percentage_rate: number | null;
+  is_active: boolean;
+}
+
 interface AdminPanelProps {
   settings: Settings | null;
   team: TeamMember[];
@@ -66,10 +80,6 @@ interface AdminPanelProps {
 }
 
 type Tab = 'settings' | 'team' | 'clients' | 'workTypes' | 'categories' | 'freeCash';
-
-
-
-import { getTeamWithBalances } from '@/app/actions/admin';
 
 export function AdminPanel({
   settings: initialSettings,
@@ -308,14 +318,26 @@ export function AdminPanel({
           setLoading(true);
           try {
             if (editingUser) {
-              await updateUser(editingUser.id, data);
+              await updateUser(editingUser.id, {
+                full_name: data.full_name,
+                role: data.role,
+                participant_type: data.participant_type,
+                percentage_rate: data.percentage_rate,
+                is_active: data.is_active,
+              });
               setTeam(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...data } : u));
               showSuccess('Пользователь обновлён');
             } else {
-              await createUser(data as any);
+              await createUser({
+                email: data.email,
+                password: data.password,
+                full_name: data.full_name,
+                role: data.role,
+                participant_type: data.participant_type,
+                percentage_rate: data.percentage_rate,
+              });
               showSuccess('Пользователь создан');
-              // Перезагрузим страницу для получения нового пользователя
-              window.location.reload();
+              await handleTeamUpdate();
             }
             setUserDialogOpen(false);
           } catch (err) {
@@ -352,36 +374,6 @@ export function AdminPanel({
 
 
 // ============ Settings Tab ============
-// Вспомогательные функции (добавь перед SettingsTab или в конец файла)
-function downloadCSV(content: string, filename: string) {
-  // Убираем BOM из content если он там есть
-  const cleanContent = content.replace(/^\uFEFF/, '');
-  
-  // BOM в виде байтов для Excel
-  const BOM = new Uint8Array([0xEF, 0xBB, 0xBF]);
-  
-  // Кодируем контент в UTF-8
-  const encoder = new TextEncoder();
-  const contentBytes = encoder.encode(cleanContent);
-  
-  // Склеиваем BOM + контент
-  const blob = new Blob([BOM, contentBytes], { type: 'text/csv;charset=utf-8' });
-  
-  // Создаём ссылку и скачиваем
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
-
 function SettingsTab({ 
   settings, 
   onSave, 
@@ -400,7 +392,7 @@ function SettingsTab({
     setExportLoading(true);
     try {
       const csv = await exportTransactionsCSV();
-      downloadCSV(csv, `dds_${formatDate(new Date())}.csv`);
+      downloadCSV(csv, `dds_${toISODate(new Date())}.csv`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка экспорта');
     } finally {
@@ -412,7 +404,7 @@ function SettingsTab({
     setExportLoading(true);
     try {
       const csv = await exportInvoicesCSV();
-      downloadCSV(csv, `invoices_${formatDate(new Date())}.csv`);
+      downloadCSV(csv, `invoices_${toISODate(new Date())}.csv`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка экспорта');
     } finally {
@@ -714,13 +706,16 @@ function ClientsTab({
                     <Button
                       variant="ghost"
                       size="icon"
+                      title={client.is_archived ? 'Восстановить' : 'Архивировать'}
                       onClick={() => onUpdate(client.id, { 
                         name: client.name,
                         tax_rate: client.tax_rate,
                         is_archived: !client.is_archived 
                       })}
                     >
-                      {client.is_archived ? '🔄' : '📦'}
+                      {client.is_archived
+                        ? <RotateCcw className="h-4 w-4" />
+                        : <Archive className="h-4 w-4" />}
                     </Button>
                   </div>
                 </>
@@ -804,13 +799,16 @@ function WorkTypesTab({
               <Button
                 variant="ghost"
                 size="icon"
+                title={wt.is_archived ? 'Восстановить' : 'Архивировать'}
                 onClick={() => onUpdate(wt.id, { 
                   name: wt.name, 
                   default_price: wt.default_price,
                   is_archived: !wt.is_archived 
                 })}
               >
-                {wt.is_archived ? '🔄' : '📦'}
+                {wt.is_archived
+                  ? <RotateCcw className="h-4 w-4" />
+                  : <Archive className="h-4 w-4" />}
               </Button>
             </div>
           ))}
@@ -903,39 +901,45 @@ function UserDialog({
   open: boolean;
   onClose: () => void;
   user: TeamMember | null;
-  onSave: (data: any) => void;
+  onSave: (data: UserFormData) => void;
+  loading: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        {/* key заставляет форму монтироваться заново при открытии/смене пользователя */}
+        {open && (
+          <UserForm
+            key={user?.id ?? 'new'}
+            user={user}
+            onSave={onSave}
+            onCancel={onClose}
+            loading={loading}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UserForm({
+  user,
+  onSave,
+  onCancel,
+  loading
+}: {
+  user: TeamMember | null;
+  onSave: (data: UserFormData) => void;
+  onCancel: () => void;
   loading: boolean;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'admin' | 'user'>('user');
-  const [participantType, setParticipantType] = useState<'partner' | 'percentage' | 'none'>('none');
-  const [percentageRate, setPercentageRate] = useState('');
-  const [isActive, setIsActive] = useState(true);
-
-  // Сброс формы при открытии/закрытии или смене пользователя
-  useEffect(() => {
-    if (open) {
-      if (user) {
-        setFullName(user.full_name);
-        setRole(user.role);
-        setParticipantType(user.participant_type || 'none');
-        setPercentageRate(String(user.percentage_rate || ''));
-        setIsActive(user.is_active);
-        setEmail('');
-        setPassword('');
-      } else {
-        setEmail('');
-        setPassword('');
-        setFullName('');
-        setRole('user');
-        setParticipantType('none');
-        setPercentageRate('');
-        setIsActive(true);
-      }
-    }
-  }, [open, user]);
+  const [fullName, setFullName] = useState(user?.full_name ?? '');
+  const [role, setRole] = useState<'admin' | 'user'>(user?.role ?? 'user');
+  const [participantType, setParticipantType] = useState<'partner' | 'percentage' | 'none'>(user?.participant_type ?? 'none');
+  const [percentageRate, setPercentageRate] = useState(user?.percentage_rate ? String(user.percentage_rate) : '');
+  const [isActive, setIsActive] = useState(user?.is_active ?? true);
 
   const handleSave = () => {
     onSave({
@@ -950,115 +954,113 @@ function UserDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{user ? 'Редактировать' : 'Новый'} участник</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          {!user && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Email</label>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="user@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Пароль</label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
-              </div>
-            </>
-          )}
-          
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Имя</label>
-            <Input
-              value={fullName}
-              onChange={e => setFullName(e.target.value)}
-              placeholder="Иван Иванов"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Роль в системе</label>
-            <Select value={role} onValueChange={(v: 'admin' | 'user') => setRole(v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">Пользователь</SelectItem>
-                <SelectItem value="admin">Администратор</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Тип участника</label>
-            <Select 
-              value={participantType} 
-              onValueChange={(v: 'partner' | 'percentage' | 'none') => setParticipantType(v)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Не участвует в распределении</SelectItem>
-                <SelectItem value="partner">Партнёр (равная доля)</SelectItem>
-                <SelectItem value="percentage">Процентник</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {participantType === 'percentage' && (
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Процент (%)</label>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                value={percentageRate}
-                onChange={e => setPercentageRate(e.target.value)}
-                placeholder="15"
-              />
-            </div>
-          )}
+    <>
+      <DialogHeader>
+        <DialogTitle>{user ? 'Редактировать' : 'Новый'} участник</DialogTitle>
+      </DialogHeader>
 
-          {user && (
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={isActive}
-                onChange={e => setIsActive(e.target.checked)}
-                className="h-4 w-4"
+      <div className="space-y-4">
+        {!user && (
+          <>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Email</label>
+              <Input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="user@example.com"
               />
-              <label htmlFor="isActive" className="text-sm">Активен</label>
             </div>
-          )}
+            <div>
+              <label className="block text-sm font-medium mb-1.5">Пароль</label>
+              <Input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+          </>
+        )}
+        
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Имя</label>
+          <Input
+            value={fullName}
+            onChange={e => setFullName(e.target.value)}
+            placeholder="Иван Иванов"
+          />
         </div>
         
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Отмена</Button>
-          <Button
-            onClick={handleSave}
-            loading={loading}
-            disabled={!fullName || (!user && (!email || !password))}
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Роль в системе</label>
+          <Select value={role} onValueChange={(v: 'admin' | 'user') => setRole(v)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="user">Пользователь</SelectItem>
+              <SelectItem value="admin">Администратор</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Тип участника</label>
+          <Select 
+            value={participantType} 
+            onValueChange={(v: 'partner' | 'percentage' | 'none') => setParticipantType(v)}
           >
-            {user ? 'Сохранить' : 'Создать'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Не участвует в распределении</SelectItem>
+              <SelectItem value="partner">Партнёр (равная доля)</SelectItem>
+              <SelectItem value="percentage">Процентник</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {participantType === 'percentage' && (
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Процент (%)</label>
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              value={percentageRate}
+              onChange={e => setPercentageRate(e.target.value)}
+              placeholder="15"
+            />
+          </div>
+        )}
+
+        {user && (
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="isActive"
+              checked={isActive}
+              onChange={e => setIsActive(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="isActive" className="text-sm">Активен</label>
+          </div>
+        )}
+      </div>
+      
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Отмена</Button>
+        <Button
+          onClick={handleSave}
+          loading={loading}
+          disabled={!fullName || (!user && (!email || !password))}
+        >
+          {user ? 'Сохранить' : 'Создать'}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -1135,22 +1137,14 @@ function FreeCashTab({
   team: TeamMember[];
   onSuccess: () => void;
 }) {
-  const [freeCash, setFreeCash] = useState(0);
   const [fundBalance, setFundBalance] = useState(0);
-  const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
     try {
-      const [freeCashAmount, fundAmount] = await Promise.all([
-        getFreeCashAmount(),
-        getFundBalance()
-      ]);
-      setFreeCash(freeCashAmount);
+      const fundAmount = await getFundBalance();
       setFundBalance(fundAmount);
     } catch (error) {
       console.error('Failed to fetch data:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -1160,7 +1154,18 @@ function FreeCashTab({
   };
 
   useEffect(() => {
-    fetchData();
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const fundAmount = await getFundBalance();
+        if (!cancelled) setFundBalance(fundAmount);
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -1200,9 +1205,7 @@ function FreeCashTab({
                     <UserBalanceAdjustments
                       userId={user.id}
                       userName={user.full_name}
-                      userType={user.participant_type}
                       currentBalance={user.balance?.[0]?.available_amount || 0}
-                      freeCash={freeCash}
                       fundBalance={fundBalance}
                       onSuccess={handleAdjustmentSuccess}
                     />

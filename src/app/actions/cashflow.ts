@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth';
 
 export interface TransactionWithRelations {
   id: string;
@@ -23,8 +24,9 @@ export interface TransactionWithRelations {
 
 export async function getTransactions(year?: number, month?: number) {
   const supabase = await createClient();
-  
-  let query = supabase
+
+  // Тянем все транзакции (без фильтра), чтобы running balance был корректным
+  const { data } = await supabase
     .from('transactions')
     .select(`
       *,
@@ -32,41 +34,33 @@ export async function getTransactions(year?: number, month?: number) {
       related_user:profiles!transactions_related_user_id_fkey(id, full_name),
       invoice:invoices!transactions_related_invoice_id_fkey(invoice_number)
     `)
-    .order('date', { ascending: false })
-    .order('created_at', { ascending: false });
-  
-  // Фильтр по году/месяцу
+    .order('date', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (!data || data.length === 0) return [];
+
+  // Рассчитываем running balance по всем записям в хронологическом порядке
+  let balance = 0;
+  const transactions = data.map(tx => {
+    if (tx.type === 'income') {
+      balance += Number(tx.amount);
+    } else {
+      balance -= Number(tx.amount);
+    }
+    return { ...tx, running_balance: balance };
+  });
+
+  // Фильтр по году/месяцу применяем после расчёта баланса
+  let result = transactions;
   if (year && month) {
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-    query = query.gte('date', startDate).lte('date', endDate);
-  }
-  
-  const { data } = await query;
-  
-  // Рассчитываем running balance
-  if (data) {
-    let balance = 0;
-    const sorted = [...data].sort((a, b) => {
-      const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
-      if (dateCompare !== 0) return dateCompare;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    result = transactions.filter(tx => {
+      const [y, m] = tx.date.split('-').map(Number);
+      return y === year && m === month;
     });
-    
-    sorted.forEach(tx => {
-      if (tx.type === 'income') {
-        balance += Number(tx.amount);
-      } else {
-        balance -= Number(tx.amount);
-      }
-      tx.running_balance = balance;
-    });
-    
-    // Возвращаем в обратном порядке (новые сверху)
-    return sorted.reverse();
   }
-  
-  return [];
+
+  // Возвращаем в обратном порядке (новые сверху)
+  return result.reverse();
 }
 
 export async function createExpense(data: {
@@ -196,58 +190,62 @@ export async function createPayout(data: {
 }
 
 export async function deleteTransaction(id: string) {
+  await requireAdmin();
   const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
-  
-  // Проверяем права админа
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-    
-  if (profile?.role !== 'admin') {
-    throw new Error('Только админ может удалять транзакции');
-  }
-  
+
   // Получаем транзакцию для отката
   const { data: transaction } = await supabase
     .from('transactions')
     .select('*')
     .eq('id', id)
     .single();
-  
+
   if (!transaction) throw new Error('Транзакция не найдена');
-  
+
+  // Доходные операции создаются системой (оплата счетов, премии, возвраты).
+  // Однозначно откатить их невозможно, поэтому удаление запрещаем.
+  if (transaction.type === 'income') {
+    throw new Error('Нельзя удалить доходную операцию');
+  }
+
   // Откатываем изменения балансов
   if (transaction.type === 'payout' && transaction.related_user_id) {
     // Возвращаем деньги на баланс участника
-    await supabase.rpc('increment_balance', {
+    const { error } = await supabase.rpc('increment_balance', {
       p_user_id: transaction.related_user_id,
       p_amount: transaction.amount
     });
+    if (error) throw error;
   } else if (transaction.type === 'expense') {
-    // Возвращаем в фонд
-    await supabase
+    // Возвращаем в фонд (расход всегда списывался из фонда)
+    const { data: fund } = await supabase
       .from('fund')
-      .update({ 
-        current_balance: supabase.rpc('get_fund_balance') + transaction.amount 
+      .select('current_balance')
+      .eq('id', 1)
+      .single();
+
+    const newBalance = (fund?.current_balance ?? 0) + Number(transaction.amount);
+    const { error } = await supabase
+      .from('fund')
+      .update({
+        current_balance: newBalance,
+        updated_at: new Date().toISOString()
       })
       .eq('id', 1);
+
+    if (error) throw error;
   }
-  
+
   // Удаляем транзакцию
   const { error } = await supabase
     .from('transactions')
     .delete()
     .eq('id', id);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/cashflow');
   revalidatePath('/');
-  
+
   return { success: true };
 }

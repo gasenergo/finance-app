@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { calculateDistribution } from '@/lib/engine/distribution';
 import type { Participant } from '@/lib/engine/distribution';
+import { getCurrentUserId, requireAdmin } from '@/lib/auth';
 
 export async function getInvoices() {
   const supabase = await createClient();
@@ -24,51 +25,45 @@ export async function getInvoices() {
   return data || [];
 }
 
-export async function getInvoiceById(id: string) {
-  const supabase = await createClient();
-  
-  const { data } = await supabase
+async function getNextInvoiceNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+  const { data: existing } = await supabase
     .from('invoices')
-    .select(`
-      *,
-      client:clients(id, name),
-      creator:profiles(id, full_name),
-      jobs:invoice_jobs(
-        job:jobs(id, description, amount, created_by, work_type:work_types(name), custom_work_name)
-      )
-    `)
-    .eq('id', id)
-    .single();
-  
-  return data;
+    .select('invoice_number');
+
+  const nums = (existing ?? [])
+    .map(row => Number.parseInt(String(row.invoice_number).replace('INV-', ''), 10))
+    .filter(n => Number.isFinite(n));
+
+  const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
+  return `INV-${String(next).padStart(4, '0')}`;
 }
 
 export async function createInvoice(clientId: string, jobIds: string[]) {
   const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
-  
+  const userId = await getCurrentUserId();
+
+  if (!clientId || jobIds.length === 0) {
+    throw new Error('Укажите клиента и хотя бы одну работу');
+  }
+
   // Получаем работы и считаем сумму
-  const { data: jobs } = await supabase
+  const { data: jobs, error: jobsError } = await supabase
     .from('jobs')
     .select('id, amount')
     .in('id', jobIds)
     .eq('status', 'available');
-  
+
+  if (jobsError) throw jobsError;
+
   if (!jobs || jobs.length === 0) {
     throw new Error('Работы не найдены или уже в счёте');
   }
-  
+
   const totalAmount = jobs.reduce((sum, job) => sum + Number(job.amount), 0);
-  
+
   // Генерируем номер счёта
-  const { count } = await supabase
-    .from('invoices')
-    .select('*', { count: 'exact', head: true });
-  
-  const invoiceNumber = `INV-${String((count || 0) + 1).padStart(4, '0')}`;
-  
+  const invoiceNumber = await getNextInvoiceNumber(supabase);
+
   // Создаём счёт
   const { data: invoice, error } = await supabase
     .from('invoices')
@@ -77,24 +72,28 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
       client_id: clientId,
       total_amount: totalAmount,
       status: 'draft',
-      created_by: user.id
+      created_by: userId
     })
     .select()
     .single();
-  
+
   if (error) throw error;
-  
+
   // Связываем работы со счётом
-  await supabase.from('invoice_jobs').insert(
+  const { error: linkError } = await supabase.from('invoice_jobs').insert(
     jobIds.map(jobId => ({ invoice_id: invoice.id, job_id: jobId }))
   );
-  
+
+  if (linkError) throw linkError;
+
   // Обновляем статус работ
-  await supabase
+  const { error: jobStatusError } = await supabase
     .from('jobs')
     .update({ status: 'invoiced' })
     .in('id', jobIds);
-  
+
+  if (jobStatusError) throw jobStatusError;
+
   revalidatePath('/jobs');
   revalidatePath('/invoices');
   revalidatePath('/');
@@ -103,22 +102,9 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
 }
 
 export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | 'sent' | 'cancelled') {
+  await requireAdmin();
   const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
-  
-  // Проверяем права админа
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-    
-  if (profile?.role !== 'admin') {
-    throw new Error('Только админ может менять статус счёта');
-  }
-  
+
   const { error } = await supabase
     .from('invoices')
     .update({ status, updated_at: new Date().toISOString() })
@@ -134,10 +120,12 @@ export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | '
       .eq('invoice_id', invoiceId);
     
     if (invoiceJobs && invoiceJobs.length > 0) {
-      await supabase
+      const { error: jobError } = await supabase
         .from('jobs')
         .update({ status: 'available' })
         .in('id', invoiceJobs.map(ij => ij.job_id));
+
+      if (jobError) throw jobError;
     }
   }
   
@@ -150,20 +138,7 @@ export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | '
 
 export async function markInvoiceAsPaid(invoiceId: string, participantIds: string[]) {
   const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
-  
-  // Проверяем права админа
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-    
-  if (profile?.role !== 'admin') {
-    throw new Error('Только админ может отмечать оплату');
-  }
+  const userId = await requireAdmin();
 
   if (participantIds.length === 0) {
     throw new Error('Выберите хотя бы одного участника');
@@ -229,85 +204,127 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
   const categoryMap = new Map(categories?.map(c => [c.slug, c.id]) || []);
 
   // === СОЗДАЁМ ТРАНЗАКЦИИ ===
-  
-  // 1. Доход
-  await supabase.from('transactions').insert({
-    date: new Date().toISOString().split('T')[0],
-    type: 'income',
-    description: `Оплата счёта ${invoice.invoice_number}`,
-    amount: invoice.total_amount,
-    related_invoice_id: invoiceId,
-    created_by: user.id
-  });
+  const date = new Date().toISOString().split('T')[0];
+  const timestamp = new Date().toISOString();
 
-  // 2. Налоги
-  if (distribution.breakdown.taxAmount > 0) {
-    await supabase.from('transactions').insert({
-      date: new Date().toISOString().split('T')[0],
-      type: 'expense',
-      category_id: categoryMap.get('tax'),
-      description: `Налог по счёту ${invoice.invoice_number}`,
-      amount: distribution.breakdown.taxAmount,
+  // Список действий отката на случай сбоя середине процесса
+  const rollbacks: Array<() => Promise<void>> = [];
+
+  try {
+    // 1. Доход
+    const incomeResult = await supabase.from('transactions').insert({
+      date,
+      type: 'income',
+      description: `Оплата счёта ${invoice.invoice_number}`,
+      amount: invoice.total_amount,
       related_invoice_id: invoiceId,
-      created_by: user.id
+      created_by: userId
     });
-  }
+    if (incomeResult.error) throw new Error(`Не удалось записать доход: ${incomeResult.error.message}`);
 
-  // 3. Отчисление в фонд
-  if (distribution.breakdown.fundContribution > 0) {
-    await supabase.from('transactions').insert({
-      date: new Date().toISOString().split('T')[0],
-      type: 'expense',
-      category_id: categoryMap.get('fund_contribution'),
-      description: `Отчисление в фонд по счёту ${invoice.invoice_number}`,
-      amount: distribution.breakdown.fundContribution,
-      related_invoice_id: invoiceId,
-      created_by: user.id
+    // 2. Налоги
+    if (distribution.breakdown.taxAmount > 0) {
+      const taxResult = await supabase.from('transactions').insert({
+        date,
+        type: 'expense',
+        category_id: categoryMap.get('tax'),
+        description: `Налог по счёту ${invoice.invoice_number}`,
+        amount: distribution.breakdown.taxAmount,
+        related_invoice_id: invoiceId,
+        created_by: userId
+      });
+      if (taxResult.error) throw new Error(`Не удалось записать налог: ${taxResult.error.message}`);
+    }
+
+    // 3. Отчисление в фонд
+    if (distribution.breakdown.fundContribution > 0) {
+      const fundTxResult = await supabase.from('transactions').insert({
+        date,
+        type: 'expense',
+        category_id: categoryMap.get('fund_contribution'),
+        description: `Отчисление в фонд по счёту ${invoice.invoice_number}`,
+        amount: distribution.breakdown.fundContribution,
+        related_invoice_id: invoiceId,
+        created_by: userId
+      });
+      if (fundTxResult.error) throw new Error(`Не удалось записать отчисление в фонд: ${fundTxResult.error.message}`);
+    }
+
+    // 4. Обновляем фонд
+    const fundResult = await supabase
+      .from('fund')
+      .update({
+        current_balance: distribution.breakdown.newFundBalance,
+        updated_at: timestamp
+      })
+      .eq('id', 1);
+    if (fundResult.error) throw new Error(`Не удалось обновить фонд: ${fundResult.error.message}`);
+
+    rollbacks.push(async () => {
+      await supabase
+        .from('fund')
+        .update({
+          current_balance: fund.current_balance,
+          updated_at: timestamp
+        })
+        .eq('id', 1);
     });
-  }
 
-  // 4. Обновляем фонд
-  await supabase
-    .from('fund')
-    .update({ 
-      current_balance: distribution.breakdown.newFundBalance,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', 1);
+    // 5. Обновляем балансы участников
+    for (const update of distribution.balanceUpdates) {
+      const balanceResult = await supabase.rpc('increment_balance', {
+        p_user_id: update.userId,
+        p_amount: update.amount
+      });
+      if (balanceResult.error) throw new Error(`Не удалось начислить баланс: ${balanceResult.error.message}`);
 
-  // 5. Обновляем балансы участников
-  for (const update of distribution.balanceUpdates) {
-    await supabase.rpc('increment_balance', {
-      p_user_id: update.userId,
-      p_amount: update.amount
-    });
-  }
+      rollbacks.push(async () => {
+        await supabase.rpc('decrement_balance', {
+          p_user_id: update.userId,
+          p_amount: update.amount
+        });
+      });
+    }
 
-  // 6. Сохраняем участников счёта (для истории)
-  await supabase.from('invoice_participants').insert(
-    participantIds.map(id => ({
-      invoice_id: invoiceId,
-      user_id: id
-    }))
-  );
+    // 6. Сохраняем участников счёта (для истории)
+    const participantsResult = await supabase.from('invoice_participants').insert(
+      participantIds.map(id => ({
+        invoice_id: invoiceId,
+        user_id: id
+      }))
+    );
+    if (participantsResult.error) throw new Error(`Не удалось сохранить участников: ${participantsResult.error.message}`);
 
-  // 7. Обновляем статус счёта
-  await supabase
-    .from('invoices')
-    .update({ 
-      status: 'paid', 
-      paid_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', invoiceId);
+    // 7. Обновляем статус счёта
+    const invoiceResult = await supabase
+      .from('invoices')
+      .update({
+        status: 'paid',
+        paid_at: timestamp,
+        updated_at: timestamp
+      })
+      .eq('id', invoiceId);
+    if (invoiceResult.error) throw new Error(`Не удалось обновить счёт: ${invoiceResult.error.message}`);
 
-  // 8. Обновляем статус работ
-  const jobIds = invoice.jobs?.map((j: { job: { id: string } }) => j.job.id) || [];
-  if (jobIds.length > 0) {
-    await supabase
-      .from('jobs')
-      .update({ status: 'paid' })
-      .in('id', jobIds);
+    // 8. Обновляем статус работ
+    const jobIds = invoice.jobs?.map((j: { job: { id: string } }) => j.job.id) || [];
+    if (jobIds.length > 0) {
+      const jobsResult = await supabase
+        .from('jobs')
+        .update({ status: 'paid' })
+        .in('id', jobIds);
+      if (jobsResult.error) throw new Error(`Не удалось обновить статус работ: ${jobsResult.error.message}`);
+    }
+  } catch (error) {
+    // Откатываем частично применённые изменения балансов и фонда
+    for (const rollback of rollbacks.reverse()) {
+      try {
+        await rollback();
+      } catch {
+        // Игнорируем ошибки отката, главное — не потерять исходную ошибку
+      }
+    }
+    throw error;
   }
 
   revalidatePath('/');
@@ -322,21 +339,8 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
 }
 
 export async function deleteInvoice(invoiceId: string) {
+  await requireAdmin();
   const supabase = await createClient();
-  
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
-  
-  // Проверяем права админа
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-    
-  if (profile?.role !== 'admin') {
-    throw new Error('Только админ может удалять счета');
-  }
 
   // Получаем счёт
   const { data: invoice } = await supabase
@@ -356,23 +360,29 @@ export async function deleteInvoice(invoiceId: string) {
 
   // Возвращаем работы в статус available
   if (invoiceJobs && invoiceJobs.length > 0) {
-    await supabase
+    const { error: jobError } = await supabase
       .from('jobs')
       .update({ status: 'available' })
       .in('id', invoiceJobs.map(ij => ij.job_id));
+
+    if (jobError) throw jobError;
   }
 
   // Удаляем связи
-  await supabase
+  const { error: linkError } = await supabase
     .from('invoice_jobs')
     .delete()
     .eq('invoice_id', invoiceId);
 
+  if (linkError) throw linkError;
+
   // Удаляем счёт
-  await supabase
+  const { error } = await supabase
     .from('invoices')
     .delete()
     .eq('id', invoiceId);
+
+  if (error) throw error;
 
   revalidatePath('/invoices');
   revalidatePath('/jobs');

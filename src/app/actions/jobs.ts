@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import type { CreateJobInput } from '@/lib/engine/validators';
+import { createJobSchema, updateJobSchema, type CreateJobInput, type UpdateJobInput } from '@/lib/engine/validators';
 
 export async function getJobs() {
   const supabase = await createClient();
@@ -28,14 +28,20 @@ export async function createJob(input: CreateJobInput) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Не авторизован');
 
+  const parsed = createJobSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message || 'Неверные данные');
+  }
+  const { client_id, description, work_type_id, custom_work_name, amount } = parsed.data;
+
   const { data, error } = await supabase
     .from('jobs')
     .insert({
-      client_id: input.client_id,
-      description: input.description,
-      work_type_id: input.work_type_id,
-      custom_work_name: input.custom_work_name,
-      amount: input.amount,
+      client_id,
+      description,
+      work_type_id,
+      custom_work_name,
+      amount,
       created_by: user.id
     })
     .select(`
@@ -55,12 +61,18 @@ export async function createJob(input: CreateJobInput) {
 
 export async function updateJob(
   id: string,
-  input: Partial<CreateJobInput>
+  input: UpdateJobInput
 ) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Не авторизован');
+
+  const parsed = updateJobSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message || 'Неверные данные');
+  }
+  const { client_id, description, work_type_id, custom_work_name, amount } = parsed.data;
 
   // Проверяем, что работа существует и в статусе available
   const { data: existingJob } = await supabase
@@ -88,11 +100,11 @@ export async function updateJob(
   const { data, error } = await supabase
     .from('jobs')
     .update({
-      client_id: input.client_id,
-      description: input.description,
-      work_type_id: input.work_type_id,
-      custom_work_name: input.custom_work_name,
-      amount: input.amount,
+      client_id,
+      description,
+      work_type_id,
+      custom_work_name,
+      amount,
       updated_at: new Date().toISOString()
     })
     .eq('id', id)
@@ -114,6 +126,30 @@ export async function updateJob(
 export async function deleteJob(id: string) {
   const supabase = await createClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Не авторизован');
+
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('status, created_by')
+    .eq('id', id)
+    .single();
+
+  if (!job) throw new Error('Работа не найдена');
+  if (job.status !== 'available') {
+    throw new Error('Можно удалять только свободные работы');
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (job.created_by !== user.id && profile?.role !== 'admin') {
+    throw new Error('Нет прав на удаление этой работы');
+  }
+
   const { error } = await supabase
     .from('jobs')
     .delete()
@@ -122,4 +158,6 @@ export async function deleteJob(id: string) {
   if (error) throw error;
 
   revalidatePath('/jobs');
+  revalidatePath('/');
+  return { success: true };
 }

@@ -7,7 +7,6 @@ import {
   ArrowDownCircle, 
   ArrowUpCircle, 
   Wallet,
-  Plus,
   Trash2,
   Filter,
   Calendar

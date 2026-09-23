@@ -1,0 +1,21 @@
+export const invoiceConfig = {
+  provider: {
+    name: 'ООО «Ваша Студия»',
+    legalName: 'Общество с ограниченной ответственностью «Ваша Студия»',
+    inn: '7700000000',
+    kpp: '770001001',
+    address: 'г. Москва, ул. Примерная, д. 1, оф. 2',
+    city: 'г. Москва',
+    directorRole: 'Генерального директора',
+    directorName: 'Иванова И. И.',
+    legalBasis: 'Устава',
+    bank: 'АО «Банк»',
+    bik: '044525225',
+    corrAccount: '30101810400000000225',
+    account: '40702810000000000000',
+    phone: '+7 (900) 000-00-00',
+    email: 'hello@example.com',
+  },
+  defaultUnit: 'шт',
+  taxNote: 'без НДС',
+};

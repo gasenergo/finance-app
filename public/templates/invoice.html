@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Счёт № {{number}}</title>
+<style>
+  /* ===== Здесь можно менять шрифты, отступы и цвета бланка ===== */
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Times New Roman', 'Liberation Serif', Georgia, serif;
+    color: #111;
+    margin: 24px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  h1 { text-align: center; font-size: 18px; margin: 0; }
+  .meta { text-align: center; margin: 0; }
+  .city { text-align: center; margin: 0 0 18px; }
+  .intro p { margin: 4px 0; text-align: justify; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; }
+  .b { border: 1px solid #000; padding: 5px 7px; }
+  .c { text-align: center; }
+  .r { text-align: right; }
+  thead th { background: #eee; font-weight: bold; }
+  .points p { margin: 4px 0; text-align: justify; }
+  .signs { margin-top: 26px; }
+  .signs td { padding: 6px 10px; vertical-align: top; width: 50%; }
+  @media print { @page { margin: 14mm 12mm; } body { margin: 0; } }
+</style>
+</head>
+<body>
+  <h1>СЧЁТ НА ОПЛАТУ № {{number}}</h1>
+  <p class="meta">от {{date}}</p>
+  <p class="city">{{city}}</p>
+
+  <div class="intro">
+    <p>{{provider_legal}} (ИНН {{provider_inn}}), именуемый в дальнейшем «Исполнитель», в лице {{director_role}} {{director_name}}, действующего на основании {{legal_basis}}, с одной стороны, и</p>
+    <p>{{client}}, именуемый в дальнейшем «Заказчик», с другой стороны, составил настоящий счёт на оплату о нижеследующем:</p>
+  </div>
+
+  <div class="points">
+    <p><b>1. Исполнитель оказал, а Заказчик принял следующие услуги:</b></p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="b c">№ п/п</th>
+        <th class="b">Наименование работ, услуг</th>
+        <th class="b c">Ед. изм.</th>
+        <th class="b c">Кол-во</th>
+        <th class="b r">Цена за ед., руб. (без НДС)</th>
+        <th class="b r">Стоимость, руб. (без НДС)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#items}}
+      <tr>
+        <td class="b c">{{index}}</td>
+        <td class="b">{{description}}</td>
+        <td class="b c">{{unit}}</td>
+        <td class="b c">{{qty}}</td>
+        <td class="b r">{{price}}</td>
+        <td class="b r">{{sum}}</td>
+      </tr>
+      {{/items}}
+      <tr>
+        <td class="b c"></td>
+        <td class="b"><b>ИТОГО:</b></td>
+        <td class="b"></td>
+        <td class="b"></td>
+        <td class="b"></td>
+        <td class="b r"><b>{{total}}</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="points" style="margin-top:14px">
+    <p>2. Общая стоимость оказанных услуг составила: {{total}} ({{total_words}}) рублей, {{tax_note}}.</p>
+    <p>3. Оплата производится по реквизитам Исполнителя банковским переводом с расчётного счёта Заказчика:</p>
+    <p>Банк: {{bank}}</p>
+    <p>БИК: {{bik}}</p>
+    <p>Расчётный счёт: {{account}}</p>
+    <p>Корреспондентский счёт: {{corr}}</p>
+    <p>ИНН/КПП: {{inn}} / {{kpp}}</p>
+  </div>
+
+  <div class="signs">
+    <p style="text-align:center"><b>ПОДПИСИ СТОРОН:</b></p>
+    <table style="margin-top:10px">
+      <tr>
+        <td>
+          <p><b>Исполнитель:</b></p>
+          <p style="margin-top:30px">_____________ /{{director_name}}/</p>
+        </td>
+        <td>
+          <p><b>Заказчик:</b></p>
+          <p style="margin-top:30px">_____________ /_______________/</p>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <p style="margin-top:14px">М.П.</p>
+        </td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

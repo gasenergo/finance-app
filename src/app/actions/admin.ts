@@ -4,6 +4,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth';
 
 // ============ SETTINGS ============
 
@@ -18,8 +19,13 @@ export async function updateSettings(data: {
   fund_contribution_rate: number;
   fund_limit: number;
 }) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
+  if (!Number.isFinite(data.tax_rate) || !Number.isFinite(data.fund_contribution_rate) || !Number.isFinite(data.fund_limit)) {
+    throw new Error('Некорректные значения настроек');
+  }
+
   const { error } = await supabase
     .from('settings')
     .update({
@@ -29,9 +35,9 @@ export async function updateSettings(data: {
       updated_at: new Date().toISOString()
     })
     .eq('id', 1);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   revalidatePath('/');
   return { success: true };
@@ -40,6 +46,7 @@ export async function updateSettings(data: {
 // ============ TEAM ============
 
 export async function getTeamWithBalances() {
+  await requireAdmin();
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -72,18 +79,19 @@ export async function createUser(data: {
   participant_type: 'partner' | 'percentage' | null;
   percentage_rate: number | null;
 }) {
+  await requireAdmin();
   const adminClient = createAdminClient();
-  
+
   // Создаём пользователя в Auth
   const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email: data.email,
     password: data.password,
     email_confirm: true
   });
-  
+
   if (authError) throw authError;
   if (!authData.user) throw new Error('Не удалось создать пользователя');
-  
+
   // Создаём профиль (upsert для обработки дубликатов)
   const { error: profileError } = await adminClient
     .from('profiles')
@@ -99,7 +107,7 @@ export async function createUser(data: {
   if (profileError) throw profileError;
 
   // Создаём начальный баланс (upsert для обработки дубликатов)
-  await adminClient
+  const { error: balanceError } = await adminClient
     .from('balances')
     .upsert({
       user_id: authData.user.id,
@@ -107,7 +115,9 @@ export async function createUser(data: {
       total_earned: 0,
       total_withdrawn: 0
     });
-  
+
+  if (balanceError) throw balanceError;
+
   revalidatePath('/admin');
   return { success: true };
 }
@@ -119,8 +129,9 @@ export async function updateUser(userId: string, data: {
   percentage_rate: number | null;
   is_active: boolean;
 }) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
   const { error } = await supabase
     .from('profiles')
     .update({
@@ -132,29 +143,30 @@ export async function updateUser(userId: string, data: {
       updated_at: new Date().toISOString()
     })
     .eq('id', userId);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   revalidatePath('/');
   return { success: true };
 }
 
 export async function resetUserPassword(userId: string, newPassword: string) {
+  await requireAdmin();
   const adminClient = createAdminClient();
-  
+
   const { error } = await adminClient.auth.admin.updateUserById(userId, {
     password: newPassword
   });
-  
+
   if (error) throw error;
-  
+
   return { success: true };
 }
 
 // ============ CLIENTS ============
 
-export async function getClients() {
+export async function getAllClients() {
   const supabase = await createClient();
   const { data } = await supabase
     .from('clients')
@@ -164,16 +176,19 @@ export async function getClients() {
 }
 
 export async function createClientAction(name: string, taxRate: number | null = null) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
+  if (!name.trim()) throw new Error('Введите название клиента');
+
   const { data, error } = await supabase
     .from('clients')
-    .insert({ name, tax_rate: taxRate })
+    .insert({ name: name.trim(), tax_rate: taxRate })
     .select()
     .single();
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   revalidatePath('/jobs');
   return data;
@@ -184,8 +199,9 @@ export async function updateClient(id: string, data: {
   tax_rate: number | null;
   is_archived: boolean;
 }) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
   const { error } = await supabase
     .from('clients')
     .update({
@@ -194,16 +210,16 @@ export async function updateClient(id: string, data: {
       is_archived: data.is_archived
     })
     .eq('id', id);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   return { success: true };
 }
 
 // ============ WORK TYPES ============
 
-export async function getWorkTypes() {
+export async function getAllWorkTypes() {
   const supabase = await createClient();
   const { data } = await supabase
     .from('work_types')
@@ -213,16 +229,19 @@ export async function getWorkTypes() {
 }
 
 export async function createWorkType(data: { name: string; default_price: number | null }) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
+  if (!data.name.trim()) throw new Error('Введите название вида работы');
+
   const { data: workType, error } = await supabase
     .from('work_types')
-    .insert(data)
+    .insert({ name: data.name.trim(), default_price: data.default_price })
     .select()
     .single();
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   revalidatePath('/jobs');
   return workType;
@@ -233,22 +252,23 @@ export async function updateWorkType(id: string, data: {
   default_price: number | null;
   is_archived: boolean;
 }) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
   const { error } = await supabase
     .from('work_types')
     .update(data)
     .eq('id', id);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   return { success: true };
 }
 
 // ============ EXPENSE CATEGORIES ============
 
-export async function getExpenseCategories() {
+export async function getAllExpenseCategories() {
   const supabase = await createClient();
   const { data } = await supabase
     .from('expense_categories')
@@ -259,44 +279,48 @@ export async function getExpenseCategories() {
 }
 
 export async function createExpenseCategory(name: string) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
+  if (!name.trim()) throw new Error('Введите название категории');
+
   const slug = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-  
+
   const { data, error } = await supabase
     .from('expense_categories')
-    .insert({ name, slug, is_system: false })
+    .insert({ name: name.trim(), slug, is_system: false })
     .select()
     .single();
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   revalidatePath('/cashflow');
   return data;
 }
 
 export async function deleteExpenseCategory(id: string) {
+  await requireAdmin();
   const supabase = await createClient();
-  
+
   // Проверяем что категория не системная
   const { data: category } = await supabase
     .from('expense_categories')
     .select('is_system')
     .eq('id', id)
     .single();
-  
+
   if (category?.is_system) {
     throw new Error('Нельзя удалить системную категорию');
   }
-  
+
   const { error } = await supabase
     .from('expense_categories')
     .delete()
     .eq('id', id);
-  
+
   if (error) throw error;
-  
+
   revalidatePath('/admin');
   return { success: true };
 }

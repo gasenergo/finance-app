@@ -4,6 +4,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin'; // Нужны админ права для списаний
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth';
 
 // 1. Получить сумму "Свободных денег"
 export async function getFreeCashAmount() {
@@ -40,12 +41,12 @@ export async function getFundBalance() {
 
 // 2. Выписать премию (из фонда)
 export async function giveBonus(userId: string, amount: number) {
-  const supabase = await createClient();
   const adminClient = createAdminClient();
+  const adminId = await requireAdmin();
 
-  // Проверка прав (только админ может давать премии)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Некорректная сумма');
+  }
 
   // 1. Получаем текущий баланс фонда
   const fundBalance = await getFundBalance();
@@ -82,7 +83,7 @@ export async function giveBonus(userId: string, amount: number) {
       description: `Премия из фонда`,
       amount: amount,
       related_user_id: userId,
-      created_by: user.id
+      created_by: adminId
     });
 
   if (transactionError) throw transactionError;
@@ -96,11 +97,15 @@ export async function giveBonus(userId: string, amount: number) {
 
 // 3. Вернуть деньги в фонд (с баланса партнера)
 export async function returnToCompanyPot(userId: string, amount: number) {
-  const supabase = await createClient();
+  const adminId = await requireAdmin();
   const adminClient = createAdminClient();
 
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('Некорректная сумма');
+  }
+
   // Проверяем баланс пользователя
-  const { data: balance } = await supabase
+  const { data: balance } = await adminClient
     .from('balances')
     .select('available_amount')
     .eq('user_id', userId)
@@ -139,8 +144,7 @@ export async function returnToCompanyPot(userId: string, amount: number) {
   if (fundError) throw fundError;
 
   // Получаем текущего пользователя для записи транзакции
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Не авторизован');
+  const createdBy = adminId;
 
   // Создаём запись в cashflow как income
   const { error: transactionError } = await adminClient
@@ -151,7 +155,7 @@ export async function returnToCompanyPot(userId: string, amount: number) {
       description: `Возврат в фонд`,
       amount: amount,
       related_user_id: userId,
-      created_by: user.id
+      created_by: createdBy
     });
 
   if (transactionError) throw transactionError;

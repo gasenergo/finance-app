@@ -10,7 +10,9 @@ import {
   XCircle, 
   Trash2, 
   Eye,
-  Filter
+  Filter,
+  Printer,
+  FileDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +26,8 @@ import {
   deleteInvoice 
 } from '@/app/actions/invoices';
 import { formatCurrency } from '@/lib/engine/calculations';
+import { buildInvoiceDocData, buildInvoiceHtml, downloadInvoiceWord } from '@/lib/invoice-doc';
+import type { InvoiceDocData } from '@/lib/invoice-doc';
 import type { Client, Profile } from '@/types/database';
 import type { DistributionBreakdown } from '@/lib/engine/distribution';
 
@@ -59,7 +63,6 @@ interface ParticipantOption {
 
 interface InvoicesListProps {
   initialInvoices: InvoiceWithRelations[];
-  clients: Client[];
   currentUser: Profile;
   participants: ParticipantOption[];
 }
@@ -71,7 +74,7 @@ const statusConfig = {
   cancelled: { label: 'Отменён', variant: 'error' as const, icon: XCircle },
 };
 
-export function InvoicesList({ initialInvoices, clients, currentUser, participants }: InvoicesListProps) {
+export function InvoicesList({ initialInvoices, currentUser, participants }: InvoicesListProps) {
   const router = useRouter();
   const [invoices, setInvoices] = useState(initialInvoices);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -82,7 +85,49 @@ export function InvoicesList({ initialInvoices, clients, currentUser, participan
   // Детали счёта
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceWithRelations | null>(null);
-  
+
+  // Печать / выгрузка документа
+  const [wordLoading, setWordLoading] = useState(false);
+
+  const handlePrint = async (invoice: InvoiceWithRelations) => {
+    let html: string;
+    try {
+      html = await buildInvoiceHtml(buildDocData(invoice));
+    } catch {
+      alert('Не удалось подготовить бланк для печати');
+      return;
+    }
+
+    // Печать через off-screen iframe в этой же вкладке — без поппер-блокеров и
+    // предпросмотров. iframe имеет реальный размер, поэтому Chromium печатает с первого раза.
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.position = 'absolute';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
+    iframe.style.width = '800px';
+    iframe.style.height = '600px';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) {
+      iframe.remove();
+      return;
+    }
+
+    const doc = printWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    printWindow.focus();
+    printWindow.onafterprint = () => iframe.remove();
+
+    // Дождаться рендеринга документа перед вызовом диалога печати
+    window.setTimeout(() => printWindow.print(), 200);
+  };
+
   // Результат распределения
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdown, setBreakdown] = useState<DistributionBreakdown | null>(null);
@@ -202,6 +247,30 @@ export function InvoicesList({ initialInvoices, clients, currentUser, participan
   const openDetails = (invoice: InvoiceWithRelations) => {
     setSelectedInvoice(invoice);
     setDetailsOpen(true);
+  };
+
+  const buildDocData = (invoice: InvoiceWithRelations): InvoiceDocData => {
+    return buildInvoiceDocData({
+      invoiceNumber: invoice.invoice_number,
+      createdAt: invoice.created_at,
+      clientName: invoice.client?.name || '—',
+      items: (invoice.jobs ?? []).map(({ job }) => ({
+        description: job.custom_work_name || job.work_type?.name || job.description,
+        amount: Number(job.amount),
+      })),
+      total: Number(invoice.total_amount),
+    });
+  };
+
+  const handleDownloadWord = async (invoice: InvoiceWithRelations) => {
+    setWordLoading(true);
+    try {
+      await downloadInvoiceWord(buildDocData(invoice));
+    } catch {
+      alert('Не удалось создать файл Word');
+    } finally {
+      setWordLoading(false);
+    }
   };
 
   // Уникальные клиенты для фильтра
@@ -430,6 +499,23 @@ export function InvoicesList({ initialInvoices, clients, currentUser, participan
           )}
 
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => selectedInvoice && handleDownloadWord(selectedInvoice)}
+              disabled={wordLoading || !selectedInvoice}
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              {wordLoading ? 'Формируем...' : 'Word'}
+            </Button>
+            {/* PDF — сразу открывает диалог печати */}
+            <Button
+              variant="outline"
+              onClick={() => selectedInvoice && handlePrint(selectedInvoice)}
+              disabled={!selectedInvoice}
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
             <Button variant="outline" onClick={() => setDetailsOpen(false)}>
               Закрыть
             </Button>
