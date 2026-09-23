@@ -27,7 +27,7 @@ export async function exportTransactionsCSV(): Promise<string> {
     'Описание',
     'Категория',
     'Пользователь',
-    'Номер счёта',
+    'Номер акта',
     'created_at'
   ];
 
@@ -73,7 +73,7 @@ export async function exportInvoicesCSV(): Promise<string> {
   }
 
   const headers = [
-    'Номер счёта',
+    'Номер акта',
     'Клиент',
     'Сумма',
     'Статус',

@@ -18,6 +18,8 @@ export interface Profile {
 export interface Client {
   id: string;
   name: string;
+  inn: string | null;
+  director_name: string | null;
   tax_rate: number | null;
   is_archived: boolean;
   created_at: string;
@@ -60,6 +62,7 @@ export interface Job {
   description: string;
   work_type_id: string | null;
   custom_work_name: string | null;
+  quantity: number;
   amount: number;
   status: JobStatus;
   created_at: string;

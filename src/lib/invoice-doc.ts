@@ -1,6 +1,9 @@
 import { createReport } from 'docx-templates/lib/browser.js';
+import JSZip from 'jszip';
 import { invoiceConfig } from '@/lib/invoice-config';
 import { numberToWords } from '@/lib/number-to-words';
+import { toGenitive } from '@/lib/russian-cases';
+import { patchInvoiceTable } from '@/lib/invoice-docx-patch';
 import { formatCurrency } from '@/lib/engine/calculations';
 import { downloadBlob } from '@/lib/csv';
 
@@ -14,8 +17,10 @@ export interface InvoiceDocItem {
 
 export interface InvoiceDocData {
   number: string;
-  dateLabel: string;
+  createdAt: string;
   clientName: string;
+  clientInn: string | null;
+  clientDirector: string | null;
   items: InvoiceDocItem[];
   total: number;
 }
@@ -25,86 +30,87 @@ const MONTHS_GENITIVE = [
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 
-function formatRuDate(date: Date): string {
-  return `«${date.getDate()}» ${MONTHS_GENITIVE[date.getMonth()]} ${date.getFullYear()} г.`;
+function parseDocDate(createdAt: string): Date {
+  return new Date(createdAt);
 }
 
 function money(n: number): string {
   return formatCurrency(n).replace(/\u00A0/g, ' ').replace('₽', '').trim();
 }
 
+// Цена за единицу: до 2 знаков после запятой (цена делится не всегда целиком)
+function money2(n: number): string {
+  return new Intl.NumberFormat('ru-RU', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(n).replace(/\u00A0/g, ' ');
+}
+
 export function buildInvoiceDocData(data: {
   invoiceNumber: string;
   createdAt: string;
   clientName: string;
-  items: Array<{ description: string; amount: number }>;
+  clientInn?: string | null;
+  clientDirector?: string | null;
+  items: Array<{ description: string; amount: number; quantity?: number }>;
   total: number;
 }): InvoiceDocData {
   return {
     number: data.invoiceNumber,
-    dateLabel: formatRuDate(new Date(data.createdAt)),
+    createdAt: data.createdAt,
     clientName: data.clientName || '—',
-    items: data.items.map(item => ({
-      description: item.description,
-      unit: invoiceConfig.defaultUnit,
-      qty: 1,
-      price: item.amount,
-      total: item.amount,
-    })),
+    clientInn: data.clientInn || null,
+    clientDirector: data.clientDirector || null,
+    items: data.items.map(item => {
+      const qty = Math.max(1, Math.round(item.quantity ?? 1));
+      return {
+        description: item.description,
+        unit: invoiceConfig.defaultUnit,
+        qty,
+        price: item.amount / qty,
+        total: item.amount,
+      };
+    }),
     total: data.total,
   };
 }
 
 interface TemplateData {
   number: string;
-  date: string;
-  city: string;
-  provider_legal: string;
-  provider_inn: string;
-  director_role: string;
-  director_name: string;
-  legal_basis: string;
+  date_day: string;
+  date_month: string;
+  date_year: string;
   client: string;
-  tax_note: string;
+  client_inn: string;
+  director_name: string;
+  director_name_gen: string;
   total: string;
   total_words: string;
-  bank: string;
-  bik: string;
-  account: string;
-  corr: string;
-  inn: string;
-  kpp: string;
   items: Array<{ index: string; description: string; unit: string; qty: string; price: string; sum: string }>;
 }
 
 function buildTemplateData(data: InvoiceDocData): TemplateData {
   const provider = invoiceConfig.provider;
+  const date = parseDocDate(data.createdAt);
+  const directorName = data.clientDirector || provider.directorName;
 
   return {
     number: data.number,
-    date: data.dateLabel,
-    city: provider.city,
-    provider_legal: provider.legalName,
-    provider_inn: provider.inn,
-    director_role: provider.directorRole,
-    director_name: provider.directorName,
-    legal_basis: provider.legalBasis,
+    date_day: String(date.getDate()),
+    date_month: MONTHS_GENITIVE[date.getMonth()],
+    date_year: String(date.getFullYear()),
     client: data.clientName,
-    tax_note: invoiceConfig.taxNote,
+    client_inn: data.clientInn || '',
+    director_name: directorName,
+    director_name_gen: toGenitive(directorName),
     total: money(data.total),
     total_words: numberToWords(data.total),
-    bank: provider.bank,
-    bik: provider.bik,
-    account: provider.account,
-    corr: provider.corrAccount,
-    inn: provider.inn,
-    kpp: provider.kpp,
     items: data.items.map((item, index) => ({
       index: String(index + 1),
       description: item.description,
       unit: item.unit,
       qty: String(item.qty),
-      price: money(item.price),
+      price: money2(item.price),
       sum: money(item.total),
     })),
   };
@@ -126,19 +132,30 @@ function loadDocxTemplate(): Promise<ArrayBuffer> {
 
 export async function downloadInvoiceWord(data: InvoiceDocData): Promise<void> {
   const template = await loadDocxTemplate();
+  const scalars = buildTemplateData(data);
 
-  // Синтаксис команд в шаблоне: {var}, цикл {FOR i IN items}..{END-FOR i}
+  // 1) Строки таблицы заполняем сами (docx-templates ломает раскладку при
+  //    дублировании строк — лишняя ячейка на весь номер колонки).
+  const zip = await JSZip.loadAsync(template);
+  const docPath = 'word/document.xml';
+  const xml = await zip.file(docPath)!.async('string');
+  zip.file(docPath, patchInvoiceTable(xml, scalars.items));
+  const patched = await zip.generateAsync({ type: 'uint8array' });
+
+  // 2) Скалярные плейсхолдеры ({number}, {client}, {director_name_gen}, …)
+  //    корректно обрабатывает docx-templates (плейсхолдеры могут быть
+  //    разбиты по рансам — он это умеет).
   const report = await createReport({
-    template,
+    template: patched,
     cmdDelimiter: ['{', '}'],
-    data: buildTemplateData(data),
+    data: scalars,
   });
 
   const blob = new Blob([report as unknown as BlobPart], {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
   const sanitizedName = data.number.replace(/[^\w-]+/g, '_');
-  downloadBlob(blob, `Счёт_${sanitizedName}.docx`);
+  downloadBlob(blob, `Акт_${sanitizedName}.docx`);
 }
 
 // ============ PDF (печать из HTML-шаблона) ============
@@ -182,8 +199,9 @@ function escapeForHtml(data: TemplateData): TemplateData {
   return {
     ...data,
     client: escHtml(data.client),
-    provider_legal: escHtml(data.provider_legal),
+    client_inn: escHtml(data.client_inn),
     director_name: escHtml(data.director_name),
+    director_name_gen: escHtml(data.director_name_gen),
     items: data.items.map(item => ({ ...item, description: escHtml(item.description) })),
   };
 }

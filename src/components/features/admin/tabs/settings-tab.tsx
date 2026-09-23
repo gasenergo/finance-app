@@ -58,7 +58,7 @@ export function SettingsTab({
     setExportLoading(true);
     try {
       const csv = await exportInvoicesCSV();
-      downloadCSV(csv, `invoices_${formatDate(new Date())}.csv`);
+      downloadCSV(csv, `akty_${formatDate(new Date())}.csv`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Ошибка экспорта');
     } finally {
@@ -145,7 +145,7 @@ export function SettingsTab({
               disabled={exportLoading}
             >
               <Download className="h-4 w-4 mr-2" />
-              Скачать счета
+              Скачать акты
             </Button>
           </div>
 

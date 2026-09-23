@@ -175,7 +175,12 @@ export async function getAllClients() {
   return data || [];
 }
 
-export async function createClientAction(name: string, taxRate: number | null = null) {
+export async function createClientAction(
+  name: string,
+  taxRate: number | null = null,
+  inn: string | null = null,
+  directorName: string | null = null
+) {
   await requireAdmin();
   const supabase = await createClient();
 
@@ -183,7 +188,7 @@ export async function createClientAction(name: string, taxRate: number | null = 
 
   const { data, error } = await supabase
     .from('clients')
-    .insert({ name: name.trim(), tax_rate: taxRate })
+    .insert({ name: name.trim(), tax_rate: taxRate, inn: inn?.trim() || null, director_name: directorName?.trim() || null })
     .select()
     .single();
 
@@ -194,8 +199,10 @@ export async function createClientAction(name: string, taxRate: number | null = 
   return data;
 }
 
-export async function updateClient(id: string, data: { 
-  name: string; 
+export async function updateClient(id: string, data: {
+  name: string;
+  inn: string | null;
+  director_name: string | null;
   tax_rate: number | null;
   is_archived: boolean;
 }) {
@@ -206,6 +213,8 @@ export async function updateClient(id: string, data: {
     .from('clients')
     .update({
       name: data.name,
+      inn: data.inn?.trim() || null,
+      director_name: data.director_name?.trim() || null,
       tax_rate: data.tax_rate,
       is_archived: data.is_archived
     })

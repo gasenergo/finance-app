@@ -24,7 +24,7 @@ interface JobsListProps {
 
 const statusConfig = {
   available: { label: 'Свободна', variant: 'success' as const },
-  invoiced: { label: 'В счёте', variant: 'warning' as const },
+  invoiced: { label: 'В акте', variant: 'warning' as const },
   paid: { label: 'Оплачена', variant: 'info' as const },
 };
 
@@ -93,7 +93,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setWorkTypeId(job.work_type_id || 'custom');
     setCustomWorkName(job.custom_work_name || '');
     setAmount(String(job.amount));
-    setQuantity(1);
+    setQuantity(job.quantity || 1);
     setFormOpen(true);
   };
 
@@ -112,6 +112,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         description,
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
         custom_work_name: workTypeId === 'custom' ? customWorkName : null,
+        quantity,
         amount: parseFloat(amount),
       });
       setJobs(prev => [newJob, ...prev]);
@@ -133,6 +134,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         description,
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
         custom_work_name: workTypeId === 'custom' ? customWorkName : null,
+        quantity,
         amount: parseFloat(amount),
       });
       setJobs(prev => prev.map(j => j.id === updated.id ? updated : j));
@@ -186,7 +188,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         <SelectContent>
           <SelectItem value="all">Все статусы</SelectItem>
           <SelectItem value="available">Свободные</SelectItem>
-          <SelectItem value="invoiced">В счёте</SelectItem>
+          <SelectItem value="invoiced">В акте</SelectItem>
           <SelectItem value="paid">Оплаченные</SelectItem>
         </SelectContent>
       </Select>
@@ -282,7 +284,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
               <Button variant="outline" onClick={() => setSelectedJobs(new Set())}>Отмена</Button>
               <Button onClick={handleCreateInvoice}>
                 <FileText className="h-4 w-4 mr-2" />
-                Создать счёт
+                Создать акт
               </Button>
             </div>
           </div>
@@ -339,7 +341,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                 </SelectContent>
               </Select>
             </div>
-            {workTypeId === 'custom' ? (
+            {workTypeId === 'custom' && (
               <div>
                 <label className="block text-sm font-medium mb-1">Название</label>
                 <Input 
@@ -348,27 +350,26 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                   placeholder="Консультация"
                 />
               </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium mb-1">Количество</label>
-                <Input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={quantity}
-                  onChange={e => {
-                    const q = parseInt(e.target.value) || 0;
-                    setQuantity(q);
-                    if (q > 0) {
-                      const wt = workTypes.find(w => w.id === workTypeId);
-                      if (wt?.default_price) {
-                        setAmount(String(wt.default_price * q));
-                      }
-                    }
-                  }}
-                />
-              </div>
             )}
+            <div>
+              <label className="block text-sm font-medium mb-1">Количество</label>
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={quantity}
+                onChange={e => {
+                  const q = parseInt(e.target.value) || 0;
+                  setQuantity(q);
+                  if (q > 0) {
+                    const wt = workTypes.find(w => w.id === workTypeId);
+                    if (wt?.default_price) {
+                      setAmount(String(wt.default_price * q));
+                    }
+                  }
+                }}
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
               <Input 

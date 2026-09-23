@@ -167,10 +167,10 @@ export function AdminPanel({
         <ClientsTab
           clients={clients}
           defaultTaxRate={settings?.tax_rate || 6}
-          onAdd={async (name, taxRate) => {
+          onAdd={async (name, taxRate, inn, directorName) => {
             setLoading(true);
             try {
-              const newClient = await createClientAction(name, taxRate);
+              const newClient = await createClientAction(name, taxRate, inn, directorName);
               setClients(prev => [...prev, newClient]);
               showSuccess('Клиент добавлен');
             } catch (err) {

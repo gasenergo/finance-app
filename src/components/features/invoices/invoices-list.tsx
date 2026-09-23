@@ -48,6 +48,7 @@ interface InvoiceWithRelations {
       id: string;
       description: string;
       amount: number;
+      quantity: number | null;
       work_type?: { name: string } | null;
       custom_work_name?: string | null;
     };
@@ -69,7 +70,7 @@ interface InvoicesListProps {
 
 const statusConfig = {
   draft: { label: 'Черновик', variant: 'default' as const, icon: FileText },
-  sent: { label: 'Выставлен', variant: 'warning' as const, icon: Send },
+  sent: { label: 'Подписан', variant: 'warning' as const, icon: Send },
   paid: { label: 'Оплачен', variant: 'success' as const, icon: CheckCircle },
   cancelled: { label: 'Отменён', variant: 'error' as const, icon: XCircle },
 };
@@ -226,7 +227,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
   };
 
   const handleDelete = async (invoiceId: string) => {
-    if (!confirm('Удалить счёт? Работы вернутся в статус "Свободные".')) {
+    if (!confirm('Удалить акт? Работы вернутся в статус "Свободные".')) {
       return;
     }
     
@@ -254,9 +255,12 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       invoiceNumber: invoice.invoice_number,
       createdAt: invoice.created_at,
       clientName: invoice.client?.name || '—',
+      clientInn: invoice.client?.inn || null,
+      clientDirector: invoice.client?.director_name || null,
       items: (invoice.jobs ?? []).map(({ job }) => ({
         description: job.custom_work_name || job.work_type?.name || job.description,
         amount: Number(job.amount),
+        quantity: Number(job.quantity || 1),
       })),
       total: Number(invoice.total_amount),
     });
@@ -282,7 +286,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Счета</h1>
+        <h1 className="text-2xl font-bold">Акты</h1>
         <p className="text-sm text-gray-500 mt-1">
           Всего: {stats.total} • Черновиков: {stats.draft} • Выставлено: {stats.sent} • Оплачено: {stats.paid}
         </p>
@@ -298,7 +302,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
           <SelectContent>
             <SelectItem value="all">Все статусы</SelectItem>
             <SelectItem value="draft">Черновики</SelectItem>
-            <SelectItem value="sent">Выставленные</SelectItem>
+            <SelectItem value="sent">Подписанные</SelectItem>
             <SelectItem value="paid">Оплаченные</SelectItem>
             <SelectItem value="cancelled">Отменённые</SelectItem>
           </SelectContent>
@@ -330,8 +334,8 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       {filteredInvoices.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title="Нет счетов"
-          description={statusFilter !== 'all' ? 'Попробуйте изменить фильтр' : 'Создайте счёт из раздела "Работы"'}
+          title="Нет актов"
+          description={statusFilter !== 'all' ? 'Попробуйте изменить фильтр' : 'Создайте акт из раздела «Работы»'}
         />
       ) : (
         <div className="space-y-4">
@@ -391,7 +395,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
                             disabled={isLoading}
                           >
                             <Send className="h-4 w-4 mr-1" />
-                            Выставить
+                            Закрыть
                           </Button>
                           <Button
                             variant="outline"
@@ -441,7 +445,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              Счёт {selectedInvoice?.invoice_number}
+              Акт {selectedInvoice?.invoice_number}
             </DialogTitle>
           </DialogHeader>
           
@@ -458,7 +462,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
               </div>
 
               <div>
-                <p className="text-sm text-gray-500 mb-2">Работы в счёте</p>
+                <p className="text-sm text-gray-500 mb-2">Работы в акте</p>
                 <div className="space-y-2">
                   {selectedInvoice.jobs?.map(({ job }) => (
                     <div 
@@ -527,7 +531,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Оплата счёта {selectedInvoiceForPayment?.invoice_number}</DialogTitle>
+            <DialogTitle>Оплата акта {selectedInvoiceForPayment?.invoice_number}</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
@@ -595,7 +599,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
               <CheckCircle className="h-5 w-5" />
-              Счёт оплачен!
+              Акт оплачен!
             </DialogTitle>
           </DialogHeader>
           
@@ -607,7 +611,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
 
               <div className="space-y-2">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-600">Сумма счёта</span>
+                  <span className="text-gray-600">Сумма акта</span>
                   <span className="font-medium">{formatCurrency(breakdown.grossAmount)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b text-red-600">

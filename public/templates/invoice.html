@@ -2,55 +2,70 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>Счёт № {{number}}</title>
+<title>Акт № {{number}}</title>
 <style>
-  /* ===== Здесь можно менять шрифты, отступы и цвета бланка ===== */
+  /* ===== Шрифты/размеры приведены к Word-шаблону (my_temp.docx):
+     Calibri 12pt, таблица работ 9pt, ИТОГО 12pt bold, итог 10pt bold,
+     подписи имён — Times New Roman 12pt ===== */
   * { box-sizing: border-box; }
   body {
-    font-family: 'Times New Roman', 'Liberation Serif', Georgia, serif;
-    color: #111;
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+    color: #000;
     margin: 24px;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 12pt;
+    line-height: 1.4;
+    font-weight: normal;
   }
-  h1 { text-align: center; font-size: 18px; margin: 0; }
-  .meta { text-align: center; margin: 0; }
-  .city { text-align: center; margin: 0 0 18px; }
-  .intro p { margin: 4px 0; text-align: justify; }
-  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13.5px; }
-  .b { border: 1px solid #000; padding: 5px 7px; }
+  h1 { text-align: center; font-size: 12pt; font-weight: bold; margin: 0; }
+  .meta { text-align: center; margin: 0; font-weight: bold; }
+  .city { text-align: right; margin: 0 0 14px; }
+  .intro p { margin: 2px 0; text-align: justify; }
+  .contract p { margin: 2px 0; text-align: justify; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .b { border: 1px solid #000; padding: 4px 6px; }
   .c { text-align: center; }
   .r { text-align: right; }
-  thead th { background: #eee; font-weight: bold; }
-  .points p { margin: 4px 0; text-align: justify; }
-  .signs { margin-top: 26px; }
+  /* шапка таблицы — 12pt жирный */
+  thead th { font-size: 12pt; font-weight: bold; text-align: center; }
+  /* строки работ — 9pt, без жирности */
+  tbody tr { font-size: 9pt; }
+  /* ИТОГО: 12pt жирный */
+  .totalrow { font-weight: bold; font-size: 12pt; }
+  /* сумма итого — 10pt жирный */
+  .totalrow .sum { font-size: 10pt; }
+  .points p { margin: 2px 0; text-align: justify; }
+  .signs { margin-top: 24px; }
   .signs td { padding: 6px 10px; vertical-align: top; width: 50%; }
+  .signs b { font-weight: bold; }
+  .sign-name { font-family: 'Times New Roman', serif; font-size: 12pt; }
+  .bold { font-weight: bold; }
   @media print { @page { margin: 14mm 12mm; } body { margin: 0; } }
 </style>
 </head>
 <body>
-  <h1>СЧЁТ НА ОПЛАТУ № {{number}}</h1>
-  <p class="meta">от {{date}}</p>
-  <p class="city">{{city}}</p>
+  <h1>АКТ СДАЧИ-ПРИЕМКИ ОКАЗАННЫХ УСЛУГ № {{number}}</h1>
+  <p class="meta">от «{{date_day}}» {{date_month}} {{date_year}} г.</p>
+  <p class="city">г. Москва</p>
 
   <div class="intro">
-    <p>{{provider_legal}} (ИНН {{provider_inn}}), именуемый в дальнейшем «Исполнитель», в лице {{director_role}} {{director_name}}, действующего на основании {{legal_basis}}, с одной стороны, и</p>
-    <p>{{client}}, именуемый в дальнейшем «Заказчик», с другой стороны, составил настоящий счёт на оплату о нижеследующем:</p>
+    <p>«<span class="bold">{{client}}</span>» (ИНН {{client_inn}}), именуемое в дальнейшем «<span class="bold">Заказчик</span>», в лице Генерального директора {{director_name_gen}}, действующего на основании Устава, с одной стороны, и</p>
+    <p><span class="bold">Иванов Кирилл Эдуардович</span> (ИНН 645201134541), именуемый в дальнейшем «<span class="bold">Исполнитель</span>», с другой стороны,</p>
+    <p>составили настоящий Акт о нижеследующем:</p>
   </div>
 
-  <div class="points">
-    <p><b>1. Исполнитель оказал, а Заказчик принял следующие услуги:</b></p>
+  <div class="contract">
+    <p>В соответствии с Договором № ИМ-13.10 от «22» сентября {{date_year}} г. Исполнитель оказал, а Заказчик принял следующие услуги за период с «1» {{date_month}} {{date_year}} г. по «31» {{date_month}} {{date_year}} г.:</p>
   </div>
 
   <table>
     <thead>
       <tr>
         <th class="b c">№ п/п</th>
-        <th class="b">Наименование работ, услуг</th>
+        <th class="b">Наименование услуги (работы) согласно Приложению №1</th>
         <th class="b c">Ед. изм.</th>
-        <th class="b c">Кол-во</th>
-        <th class="b r">Цена за ед., руб. (без НДС)</th>
-        <th class="b r">Стоимость, руб. (без НДС)</th>
+        <th class="b c">Количество</th>
+        <th class="b c">Цена за ед., руб. (без НДС)</th>
+        <th class="b c">Стоимость, руб. (без НДС)</th>
       </tr>
     </thead>
     <tbody>
@@ -60,47 +75,39 @@
         <td class="b">{{description}}</td>
         <td class="b c">{{unit}}</td>
         <td class="b c">{{qty}}</td>
-        <td class="b r">{{price}}</td>
-        <td class="b r">{{sum}}</td>
+        <td class="b c">{{price}}</td>
+        <td class="b c">{{sum}}</td>
       </tr>
       {{/items}}
-      <tr>
+      <tr class="totalrow">
         <td class="b c"></td>
-        <td class="b"><b>ИТОГО:</b></td>
-        <td class="b"></td>
-        <td class="b"></td>
-        <td class="b"></td>
-        <td class="b r"><b>{{total}}</b></td>
+        <td class="b">ИТОГО:</td>
+        <td class="b c"></td>
+        <td class="b c"></td>
+        <td class="b c"></td>
+        <td class="b c sum">{{total}}</td>
       </tr>
     </tbody>
   </table>
 
-  <div class="points" style="margin-top:14px">
-    <p>2. Общая стоимость оказанных услуг составила: {{total}} ({{total_words}}) рублей, {{tax_note}}.</p>
-    <p>3. Оплата производится по реквизитам Исполнителя банковским переводом с расчётного счёта Заказчика:</p>
-    <p>Банк: {{bank}}</p>
-    <p>БИК: {{bik}}</p>
-    <p>Расчётный счёт: {{account}}</p>
-    <p>Корреспондентский счёт: {{corr}}</p>
-    <p>ИНН/КПП: {{inn}} / {{kpp}}</p>
+  <div class="points" style="margin-top:10px">
+    <p class="bold">Общая стоимость оказанных услуг составила: {{total}} ({{total_words}}) рублей, без НДС.</p>
+    <p>Качество и объем оказанных услуг соответствуют условиям Договора.</p>
+    <p>Заказчик претензий к качеству, объему и срокам оказания услуг не имеет.</p>
   </div>
 
   <div class="signs">
     <p style="text-align:center"><b>ПОДПИСИ СТОРОН:</b></p>
-    <table style="margin-top:10px">
+    <table style="margin-top:8px">
       <tr>
         <td>
           <p><b>Исполнитель:</b></p>
-          <p style="margin-top:30px">_____________ /{{director_name}}/</p>
+          <p style="margin-top:26px" class="sign-name">_____________ /Иванов Кирилл Эдуардович/</p>
         </td>
         <td>
           <p><b>Заказчик:</b></p>
-          <p style="margin-top:30px">_____________ /_______________/</p>
-        </td>
-      </tr>
-      <tr>
-        <td colspan="2">
-          <p style="margin-top:14px">М.П.</p>
+          <p style="margin-top:26px" class="sign-name">_____________ /{{director_name}}/</p>
+          <p style="margin-top:10px">М.П.</p>
         </td>
       </tr>
     </table>

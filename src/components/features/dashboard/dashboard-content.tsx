@@ -59,7 +59,7 @@ export function DashboardContent({ data, currentUser }: DashboardContentProps) {
           icon={Clock}
           iconColor="text-yellow-600"
           iconBg="bg-yellow-100"
-          subtitle={`${stats.invoicesCount.sent} счетов`}
+          subtitle={`${stats.invoicesCount.sent} актов`}
         />
         
         <MetricCard
@@ -137,7 +137,7 @@ export function DashboardContent({ data, currentUser }: DashboardContentProps) {
                 variant="success" 
               />
               <StatRow 
-                label="В счетах" 
+                label="В актах" 
                 value={stats.jobsCount.invoiced} 
                 variant="warning" 
               />
@@ -154,20 +154,20 @@ export function DashboardContent({ data, currentUser }: DashboardContentProps) {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <FileText className="h-5 w-5 text-gray-400" />
-              Счета
+              Акты
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              <StatRow 
-                label="Черновики" 
-                value={stats.invoicesCount.draft} 
-                variant="default" 
+              <StatRow
+                label="Черновики"
+                value={stats.invoicesCount.draft}
+                variant="default"
               />
-              <StatRow 
-                label="Выставлены" 
-                value={stats.invoicesCount.sent} 
-                variant="warning" 
+              <StatRow
+                label="Подписанные"
+                value={stats.invoicesCount.sent}
+                variant="warning"
               />
               <StatRow 
                 label="Оплачены" 

@@ -16,7 +16,7 @@ export function BottomNav({ isAdmin }: BottomNavProps) {
     { name: 'Дашборд', href: '/', icon: LayoutDashboard },
     { name: 'ДДС', href: '/cashflow', icon: ArrowRightLeft },
     { name: 'Работы', href: '/jobs', icon: Briefcase },
-    { name: 'Счета', href: '/invoices', icon: FileText },
+    { name: 'Акты', href: '/invoices', icon: FileText },
   ];
 
   // Добавляем настройки только для админа

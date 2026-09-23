@@ -10,7 +10,7 @@ const navigation = [
   { name: 'Дашборд', href: '/', icon: LayoutDashboard },
   { name: 'Движение ДС', href: '/cashflow', icon: ArrowRightLeft },
   { name: 'Работы', href: '/jobs', icon: Briefcase },
-  { name: 'Счета', href: '/invoices', icon: FileText },
+  { name: 'Акты', href: '/invoices', icon: FileText },
   { name: 'Настройки', href: '/admin', icon: Settings, adminOnly: true },
 ];
 

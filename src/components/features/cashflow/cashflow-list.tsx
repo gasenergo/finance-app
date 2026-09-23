@@ -278,7 +278,7 @@ const handleCreatePayout = async () => {
         <EmptyState
           icon={ArrowDownCircle}
           title="Нет транзакций"
-          description="Транзакции появятся после оплаты счетов"
+          description="Транзакции появятся после оплаты актов"
         />
       ) : (
         <>

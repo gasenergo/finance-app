@@ -14,10 +14,10 @@ export async function getInvoices() {
     .from('invoices')
     .select(`
       *,
-      client:clients(id, name),
+      client:clients(id, name, inn, director_name),
       creator:profiles(id, full_name),
       jobs:invoice_jobs(
-        job:jobs(id, description, amount, work_type:work_types(name), custom_work_name)
+        job:jobs(id, description, amount, quantity, work_type:work_types(name), custom_work_name)
       )
     `)
     .order('created_at', { ascending: false });
@@ -56,7 +56,7 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
   if (jobsError) throw jobsError;
 
   if (!jobs || jobs.length === 0) {
-    throw new Error('Работы не найдены или уже в счёте');
+    throw new Error('Работы не найдены или уже в акте');
   }
 
   const totalAmount = jobs.reduce((sum, job) => sum + Number(job.amount), 0);
@@ -215,7 +215,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
     const incomeResult = await supabase.from('transactions').insert({
       date,
       type: 'income',
-      description: `Оплата счёта ${invoice.invoice_number}`,
+      description: `Оплата акта ${invoice.invoice_number}`,
       amount: invoice.total_amount,
       related_invoice_id: invoiceId,
       created_by: userId
@@ -228,7 +228,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
         date,
         type: 'expense',
         category_id: categoryMap.get('tax'),
-        description: `Налог по счёту ${invoice.invoice_number}`,
+        description: `Налог по акту ${invoice.invoice_number}`,
         amount: distribution.breakdown.taxAmount,
         related_invoice_id: invoiceId,
         created_by: userId
@@ -242,7 +242,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
         date,
         type: 'expense',
         category_id: categoryMap.get('fund_contribution'),
-        description: `Отчисление в фонд по счёту ${invoice.invoice_number}`,
+        description: `Отчисление в фонд по акту ${invoice.invoice_number}`,
         amount: distribution.breakdown.fundContribution,
         related_invoice_id: invoiceId,
         created_by: userId
@@ -350,7 +350,7 @@ export async function deleteInvoice(invoiceId: string) {
     .single();
   
   if (!invoice) throw new Error('Счёт не найден');
-  if (invoice.status === 'paid') throw new Error('Нельзя удалить оплаченный счёт');
+  if (invoice.status === 'paid') throw new Error('Нельзя удалить оплаченный акт');
 
   // Получаем связанные работы
   const { data: invoiceJobs } = await supabase
