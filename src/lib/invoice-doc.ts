@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { invoiceConfig } from '@/lib/invoice-config';
 import { numberToWords } from '@/lib/number-to-words';
 import { toGenitive } from '@/lib/russian-cases';
+import { aggregateInvoiceItems } from '@/lib/invoice-doc-items';
 import { patchInvoiceTable } from '@/lib/invoice-docx-patch';
 import { formatCurrency } from '@/lib/engine/calculations';
 import { downloadBlob } from '@/lib/csv';
@@ -52,7 +53,7 @@ export function buildInvoiceDocData(data: {
   clientName: string;
   clientInn?: string | null;
   clientDirector?: string | null;
-  items: Array<{ description: string; amount: number; quantity?: number }>;
+  items: Array<{ description: string; amount: number; quantity?: number; unitPrice?: number | null }>;
   total: number;
 }): InvoiceDocData {
   return {
@@ -61,16 +62,7 @@ export function buildInvoiceDocData(data: {
     clientName: data.clientName || '—',
     clientInn: data.clientInn || null,
     clientDirector: data.clientDirector || null,
-    items: data.items.map(item => {
-      const qty = Math.max(1, Math.round(item.quantity ?? 1));
-      return {
-        description: item.description,
-        unit: invoiceConfig.defaultUnit,
-        qty,
-        price: item.amount / qty,
-        total: item.amount,
-      };
-    }),
+    items: aggregateInvoiceItems(data.items).map(group => ({ ...group, unit: invoiceConfig.defaultUnit })),
     total: data.total,
   };
 }

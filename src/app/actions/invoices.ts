@@ -17,7 +17,7 @@ export async function getInvoices() {
       client:clients(id, name, inn, director_name),
       creator:profiles(id, full_name),
       jobs:invoice_jobs(
-        job:jobs(id, description, amount, quantity, work_type:work_types(name), custom_work_name)
+        job:jobs(id, description, amount, quantity, work_type:work_types(name, default_price), custom_work_name)
       )
     `)
     .order('created_at', { ascending: false });
