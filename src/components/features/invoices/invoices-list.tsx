@@ -49,6 +49,7 @@ interface InvoiceWithRelations {
       description: string;
       amount: number;
       quantity: number | null;
+      unit: string | null;
       work_type?: { name: string; default_price: number | null } | null;
       custom_work_name?: string | null;
     };
@@ -261,6 +262,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
         description: job.custom_work_name || job.work_type?.name || job.description,
         amount: Number(job.amount),
         quantity: Number(job.quantity || 1),
+        unit: job.unit || 'шт',
         unitPrice: job.work_type?.default_price ?? null,
       })),
       total: Number(invoice.total_amount),

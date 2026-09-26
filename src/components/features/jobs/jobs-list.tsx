@@ -43,6 +43,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   const [customWorkName, setCustomWorkName] = useState('');
   const [amount, setAmount] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [unit, setUnit] = useState('шт');
 
   // Edit state
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -78,6 +79,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setCustomWorkName('');
     setAmount('');
     setQuantity(1);
+    setUnit('шт');
     setEditingJob(null);
   };
 
@@ -94,6 +96,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     setCustomWorkName(job.custom_work_name || '');
     setAmount(String(job.amount));
     setQuantity(job.quantity || 1);
+    setUnit(job.unit || 'шт');
     setFormOpen(true);
   };
 
@@ -113,6 +116,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
         custom_work_name: workTypeId === 'custom' ? customWorkName : null,
         quantity,
+        unit,
         amount: parseFloat(amount),
       });
       setJobs(prev => [newJob, ...prev]);
@@ -135,6 +139,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
         custom_work_name: workTypeId === 'custom' ? customWorkName : null,
         quantity,
+        unit,
         amount: parseFloat(amount),
       });
       setJobs(prev => prev.map(j => j.id === updated.id ? updated : j));
@@ -260,6 +265,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                         {job.work_type?.name || job.custom_work_name}
                       </p>
                       <p className="text-lg font-semibold">{formatCurrency(job.amount)}</p>
+                      <p className="text-xs text-gray-500">{job.quantity || 1} {job.unit || 'шт'}</p>
                     </div>
                     <Badge variant={status.variant}>{status.label}</Badge>
                   </div>
@@ -326,6 +332,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                 setWorkTypeId(v);
                 setQuantity(1);
                 const wt = workTypes.find(w => w.id === v);
+                setUnit(wt?.unit || 'шт');
                 if (wt?.default_price) setAmount(String(wt.default_price));
               }}>
                 <SelectTrigger>
@@ -369,6 +376,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                   }
                 }}
               />
+              <p className="text-xs text-gray-400 mt-1">Ед. изм. подставится из вида работы</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Сумма (₽)</label>

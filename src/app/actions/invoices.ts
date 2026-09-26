@@ -17,7 +17,7 @@ export async function getInvoices() {
       client:clients(id, name, inn, director_name),
       creator:profiles(id, full_name),
       jobs:invoice_jobs(
-        job:jobs(id, description, amount, quantity, work_type:work_types(name, default_price), custom_work_name)
+        job:jobs(id, description, amount, quantity, unit, work_type:work_types(name, default_price), custom_work_name)
       )
     `)
     .order('created_at', { ascending: false });
@@ -30,12 +30,15 @@ async function getNextInvoiceNumber(supabase: Awaited<ReturnType<typeof createCl
     .from('invoices')
     .select('invoice_number');
 
-  const nums = (existing ?? [])
-    .map(row => Number.parseInt(String(row.invoice_number).replace('INV-', ''), 10))
-    .filter(n => Number.isFinite(n));
+  // Новые акты нумеруются простыми числами: 10, 11, 12… (без префикса INV-).
+  // Если простые номера уже есть — продолжаем с максимального; иначе стартуем с 10.
+  const plainNumbers = (existing ?? [])
+    .map(row => String(row.invoice_number).trim())
+    .filter(s => /^\d+$/.test(s))
+    .map(Number);
 
-  const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
-  return `INV-${String(next).padStart(4, '0')}`;
+  const next = plainNumbers.length > 0 ? Math.max(...plainNumbers) + 1 : 10;
+  return String(next);
 }
 
 export async function createInvoice(clientId: string, jobIds: string[]) {

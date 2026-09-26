@@ -2,6 +2,7 @@ export interface InvoiceItemInput {
   description: string;
   amount: number;
   quantity?: number;
+  unit?: string;
   unitPrice?: number | null;
 }
 
@@ -10,16 +11,18 @@ export interface InvoiceItemGroup {
   qty: number;
   price: number;
   total: number;
+  unit: string | null;
 }
 
 /**
  * Объединяет одинаковые работы (по названию) в строки акта:
  * - количество и сумма складываются;
  * - цена за единицу берётся из работы (unitPrice = default_price вида работ),
- *   иначе (своё название без вида) — сумма ÷ количество.
+ *   иначе (своё название без вида) — сумма ÷ количество;
+ * - единица измерения сохраняется из работы.
  */
 export function aggregateInvoiceItems(items: InvoiceItemInput[]): InvoiceItemGroup[] {
-  const groups = new Map<string, { description: string; unitPrice: number | null; qty: number; total: number }>();
+  const groups = new Map<string, { description: string; unitPrice: number | null; unit: string | null; qty: number; total: number }>();
 
   for (const item of items) {
     const key = item.description.trim();
@@ -34,7 +37,13 @@ export function aggregateInvoiceItems(items: InvoiceItemInput[]): InvoiceItemGro
       continue;
     }
 
-    groups.set(key, { description: key, unitPrice: item.unitPrice ?? null, qty, total });
+    groups.set(key, {
+      description: key,
+      unitPrice: item.unitPrice ?? null,
+      unit: item.unit && item.unit.trim() ? item.unit.trim() : null,
+      qty,
+      total,
+    });
   }
 
   return [...groups.values()].map(g => ({
@@ -42,5 +51,6 @@ export function aggregateInvoiceItems(items: InvoiceItemInput[]): InvoiceItemGro
     qty: g.qty,
     total: g.total,
     price: g.unitPrice != null ? g.unitPrice : g.total / g.qty,
+    unit: g.unit,
   }));
 }

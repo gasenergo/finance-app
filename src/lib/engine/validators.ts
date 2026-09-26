@@ -6,6 +6,7 @@ export const createJobSchema = z.object({
   work_type_id: z.string().uuid().nullable(),
   custom_work_name: z.string().nullable(),
   quantity: z.number().int().min(1, 'Количество должно быть больше 0').optional(),
+  unit: z.string().trim().min(1, 'Введите единицу измерения').optional(),
   amount: z.number().positive('Сумма должна быть больше 0'),
 });
 

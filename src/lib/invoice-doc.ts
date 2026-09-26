@@ -53,7 +53,7 @@ export function buildInvoiceDocData(data: {
   clientName: string;
   clientInn?: string | null;
   clientDirector?: string | null;
-  items: Array<{ description: string; amount: number; quantity?: number; unitPrice?: number | null }>;
+  items: Array<{ description: string; amount: number; quantity?: number; unit?: string; unitPrice?: number | null }>;
   total: number;
 }): InvoiceDocData {
   return {
@@ -62,7 +62,7 @@ export function buildInvoiceDocData(data: {
     clientName: data.clientName || '—',
     clientInn: data.clientInn || null,
     clientDirector: data.clientDirector || null,
-    items: aggregateInvoiceItems(data.items).map(group => ({ ...group, unit: invoiceConfig.defaultUnit })),
+    items: aggregateInvoiceItems(data.items).map(group => ({ ...group, unit: group.unit || invoiceConfig.defaultUnit })),
     total: data.total,
   };
 }

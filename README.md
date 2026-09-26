@@ -152,11 +152,20 @@ ALTER TABLE public.clients
   ADD COLUMN IF NOT EXISTS director_name text;
 ```
 
-У работ (`jobs`) нужна колонка **`quantity`** (количество — для колонки «Кол-во» и «Цена за ед.» в акте; цена за единицу = сумма / количество):
+У работ (`jobs`) нужны колонки **`quantity`** (количество) и **`unit`** (единица измерения) — для колонок «Кол-во» и «Ед. изм.» в акте. У видов работ (`work_types`) — колонка **`unit`**, откуда единица берётся автоматически:
 
 ```sql
+ALTER TABLE public.work_types
+  ADD COLUMN IF NOT EXISTS unit text NOT NULL DEFAULT 'шт';
+
 ALTER TABLE public.jobs
-  ADD COLUMN IF NOT EXISTS quantity integer NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS quantity integer NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS unit text NOT NULL DEFAULT 'шт';
+
+-- проставить единицы существующим работам из их видов работ
+UPDATE public.jobs SET unit = wt.unit
+FROM public.work_types wt
+WHERE jobs.work_type_id = wt.id;
 ```
 
 Рекомендуется включить **Row Level Security (RLS)**:

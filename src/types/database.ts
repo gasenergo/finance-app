@@ -37,6 +37,7 @@ export interface WorkType {
   id: string;
   name: string;
   default_price: number | null;
+  unit: string;
   is_archived: boolean;
   created_at: string;
 }
@@ -63,6 +64,7 @@ export interface Job {
   work_type_id: string | null;
   custom_work_name: string | null;
   quantity: number;
+  unit: string;
   amount: number;
   status: JobStatus;
   created_at: string;

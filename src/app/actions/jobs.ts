@@ -13,7 +13,7 @@ export async function getJobs() {
       *,
       client:clients(id, name),
       creator:profiles(id, full_name),
-      work_type:work_types(id, name, default_price)
+      work_type:work_types(id, name, default_price, unit)
     `)
     .order('created_at', { ascending: false });
 
@@ -32,7 +32,7 @@ export async function createJob(input: CreateJobInput) {
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message || 'Неверные данные');
   }
-  const { client_id, description, work_type_id, custom_work_name, quantity, amount } = parsed.data;
+  const { client_id, description, work_type_id, custom_work_name, quantity, unit, amount } = parsed.data;
 
   const { data, error } = await supabase
     .from('jobs')
@@ -42,6 +42,7 @@ export async function createJob(input: CreateJobInput) {
       work_type_id,
       custom_work_name,
       quantity: quantity ?? 1,
+      unit: unit || 'шт',
       amount,
       created_by: user.id
     })
@@ -73,7 +74,7 @@ export async function updateJob(
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message || 'Неверные данные');
   }
-  const { client_id, description, work_type_id, custom_work_name, quantity, amount } = parsed.data;
+  const { client_id, description, work_type_id, custom_work_name, quantity, unit, amount } = parsed.data;
 
   // Проверяем, что работа существует и в статусе available
   const { data: existingJob } = await supabase
@@ -106,6 +107,7 @@ export async function updateJob(
       work_type_id,
       custom_work_name,
       quantity: quantity ?? 1,
+      unit: unit || 'шт',
       amount,
       updated_at: new Date().toISOString()
     })

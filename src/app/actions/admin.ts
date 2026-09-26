@@ -237,7 +237,7 @@ export async function getAllWorkTypes() {
   return data || [];
 }
 
-export async function createWorkType(data: { name: string; default_price: number | null }) {
+export async function createWorkType(data: { name: string; default_price: number | null; unit?: string }) {
   await requireAdmin();
   const supabase = await createClient();
 
@@ -245,7 +245,7 @@ export async function createWorkType(data: { name: string; default_price: number
 
   const { data: workType, error } = await supabase
     .from('work_types')
-    .insert({ name: data.name.trim(), default_price: data.default_price })
+    .insert({ name: data.name.trim(), default_price: data.default_price, unit: data.unit?.trim() || 'шт' })
     .select()
     .single();
 
@@ -256,9 +256,10 @@ export async function createWorkType(data: { name: string; default_price: number
   return workType;
 }
 
-export async function updateWorkType(id: string, data: { 
-  name: string; 
+export async function updateWorkType(id: string, data: {
+  name: string;
   default_price: number | null;
+  unit?: string;
   is_archived: boolean;
 }) {
   await requireAdmin();
@@ -266,7 +267,12 @@ export async function updateWorkType(id: string, data: {
 
   const { error } = await supabase
     .from('work_types')
-    .update(data)
+    .update({
+      name: data.name,
+      default_price: data.default_price,
+      unit: data.unit?.trim() || 'шт',
+      is_archived: data.is_archived
+    })
     .eq('id', id);
 
   if (error) throw error;
