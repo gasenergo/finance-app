@@ -230,6 +230,13 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
   const rollbacks: Array<() => Promise<void>> = [];
 
   try {
+    rollbacks.push(async () => {
+      await supabase
+        .from('transactions')
+        .delete()
+        .eq('related_invoice_id', invoiceId);
+    });
+
     // 1. Доход
     const incomeResult = await supabase.from('transactions').insert({
       date,
