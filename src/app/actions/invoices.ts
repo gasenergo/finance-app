@@ -164,6 +164,22 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
   if (invoice.status === 'paid') throw new Error('Счёт уже оплачен');
   if (invoice.status === 'cancelled') throw new Error('Счёт отменён');
 
+  // Проверяем наличие существующих транзакций дохода по этому акту
+  const { data: existingIncomeTxs, error: txError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('related_invoice_id', invoiceId)
+    .eq('type', 'income')
+    .limit(1);
+
+  if (txError) {
+    throw new Error(`Ошибка при проверке транзакций: ${txError.message}`);
+  }
+
+  if (existingIncomeTxs && existingIncomeTxs.length > 0) {
+    throw new Error('Для этого акта уже существует транзакция дохода');
+  }
+
   // Получаем настройки и фонд
   const [{ data: settings }, { data: fund }, { data: participants }] = await Promise.all([
     supabase.from('settings').select('*').single(),
