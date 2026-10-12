@@ -138,6 +138,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<InvoiceWithRelations | null>(null);
   const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -178,12 +179,14 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
     setSelectedInvoiceForPayment(invoice);
     setSelectedParticipants(new Set(participants.map(p => p.id)));
     setError('');
+    setIsSubmitting(false);
     setPaymentDialogOpen(true);
   };
 
   const handleConfirmPayment = async () => {
-    if (!selectedInvoiceForPayment || selectedParticipants.size === 0) return;
+    if (!selectedInvoiceForPayment || selectedParticipants.size === 0 || isSubmitting) return;
     
+    setIsSubmitting(true);
     setLoading(selectedInvoiceForPayment.id);
     setError('');
     
@@ -210,6 +213,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка при оплате');
+      setIsSubmitting(false); // Только сбрасываем при ошибке, при успехе модалка закрывается
     } finally {
       setLoading(null);
     }
@@ -587,8 +591,8 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
             </Button>
             <Button
               onClick={handleConfirmPayment}
-              disabled={selectedParticipants.size === 0 || loading !== null}
-              loading={loading === selectedInvoiceForPayment?.id}
+              disabled={selectedParticipants.size === 0 || loading !== null || isSubmitting}
+              loading={loading === selectedInvoiceForPayment?.id || isSubmitting}
             >
               Подтвердить оплату
             </Button>

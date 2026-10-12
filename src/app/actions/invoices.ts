@@ -160,9 +160,23 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
     .eq('id', invoiceId)
     .single();
     
+
   if (!invoice) throw new Error('Счёт не найден');
   if (invoice.status === 'paid') throw new Error('Счёт уже оплачен');
   if (invoice.status === 'cancelled') throw new Error('Счёт отменён');
+
+  // Дополнительная проверка идемпотентности: проверяем, нет ли уже транзакции дохода по этому счету
+  const { data: existingIncomeTxs } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('related_invoice_id', invoiceId)
+    .eq('type', 'income')
+    .limit(1);
+
+  if (existingIncomeTxs && existingIncomeTxs.length > 0) {
+    throw new Error('Оплата по этому счету уже проведена (найдена транзакция)');
+  }
+
 
   // Получаем настройки и фонд
   const [{ data: settings }, { data: fund }, { data: participants }] = await Promise.all([
