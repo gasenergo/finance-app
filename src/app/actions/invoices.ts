@@ -188,6 +188,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
 
   const accountId: string = invoice.account_id;
 
+
   // Проверяем наличие существующих транзакций дохода по этому акту
   const { data: existingIncomeTxs, error: txError } = await supabase
     .from('transactions')
@@ -211,6 +212,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       .select('*')
       .eq('id', accountId)
       .single(),
+  
     supabase
       .from('profiles')
       .select('id, full_name, participant_type, percentage_rate')

@@ -82,6 +82,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
   const [statusFilter, setStatusFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [loading, setLoading] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   
   // Детали счёта
@@ -182,9 +183,10 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
   };
 
   const handleConfirmPayment = async () => {
-    if (!selectedInvoiceForPayment || selectedParticipants.size === 0) return;
+    if (!selectedInvoiceForPayment || selectedParticipants.size === 0 || isSubmitting) return;
     
     setLoading(selectedInvoiceForPayment.id);
+    setIsSubmitting(true);
     setError('');
     
     try {
@@ -212,6 +214,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       setError(err instanceof Error ? err.message : 'Ошибка при оплате');
     } finally {
       setLoading(null);
+      setIsSubmitting(false);
     }
   };
 
@@ -587,7 +590,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
             </Button>
             <Button
               onClick={handleConfirmPayment}
-              disabled={selectedParticipants.size === 0 || loading !== null}
+              disabled={selectedParticipants.size === 0 || loading !== null || isSubmitting}
               loading={loading === selectedInvoiceForPayment?.id}
             >
               Подтвердить оплату
