@@ -2,29 +2,31 @@
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/app/actions/auth';
 import { getTransactions } from '@/app/actions/cashflow';
-import { getExpenseCategories, getTeamMembers } from '@/app/actions/references';
+import { getAccounts, getExpenseCategories, getTeamMembers } from '@/app/actions/references';
 import { AppLayout } from '@/components/layout/app-layout';
 import { CashFlowList } from '@/components/features/cashflow/cashflow-list';
 
 export default async function CashFlowPage() {
   const currentUser = await getCurrentUser();
-  
+
   if (!currentUser) {
     redirect('/login');
   }
-  
-  const [transactions, categories, members] = await Promise.all([
+
+  const [transactions, categories, members, accounts] = await Promise.all([
     getTransactions(),
     getExpenseCategories(),
     getTeamMembers(),
+    getAccounts(),
   ]);
-  
+
   return (
     <AppLayout isAdmin={currentUser.role === 'admin'} userName={currentUser.full_name}>
       <CashFlowList
         initialTransactions={transactions}
         categories={categories}
         members={members}
+        accounts={accounts}
         currentUser={currentUser}
       />
     </AppLayout>

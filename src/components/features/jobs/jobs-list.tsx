@@ -1,8 +1,9 @@
+// src/components/features/jobs/jobs-list.tsx
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Briefcase, FileText, Trash2, Pencil } from 'lucide-react';
+import { Plus, Briefcase, FileText, Trash2, Pencil, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,12 +14,13 @@ import { Input } from '@/components/ui/input';
 import { createJob, deleteJob, updateJob } from '@/app/actions/jobs';
 import { createInvoice } from '@/app/actions/invoices';
 import { formatCurrency } from '@/lib/engine/calculations';
-import type { Job, Client, WorkType, Profile } from '@/types/database';
+import type { Job, Client, WorkType, Profile, Account } from '@/types/database';
 
 interface JobsListProps {
   initialJobs: Job[];
   clients: Client[];
   workTypes: WorkType[];
+  accounts: Account[];
   currentUser: Profile;
 }
 
@@ -28,15 +30,19 @@ const statusConfig = {
   paid: { label: 'Оплачена', variant: 'info' as const },
 };
 
-export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsListProps) {
+export function JobsList({ initialJobs, clients, workTypes, accounts, currentUser }: JobsListProps) {
   const router = useRouter();
+  const defaultAccountId = accounts[0]?.id || '';
+
   const [jobs, setJobs] = useState(initialJobs);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [accountFilter, setAccountFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(false);
 
   // Form state
+  const [accountId, setAccountId] = useState(defaultAccountId);
   const [clientId, setClientId] = useState('');
   const [description, setDescription] = useState('');
   const [workTypeId, setWorkTypeId] = useState('custom');
@@ -50,13 +56,16 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
 
   const isAdmin = currentUser.role === 'admin';
 
-  const filteredJobs = jobs.filter(job => 
-    statusFilter === 'all' || job.status === statusFilter
-  );
+  const filteredJobs = jobs.filter(job => {
+    const matchStatus = statusFilter === 'all' || job.status === statusFilter;
+    const matchAccount = accountFilter === 'all' || job.account_id === accountFilter;
+    return matchStatus && matchAccount;
+  });
 
   const selectedJobsData = jobs.filter(j => selectedJobs.has(j.id));
   const selectedTotal = selectedJobsData.reduce((sum, j) => sum + Number(j.amount), 0);
   const selectedClientId = selectedJobsData[0]?.client_id;
+  const selectedAccountId = selectedJobsData[0]?.account_id;
 
   const handleSelect = (id: string, job: Job) => {
     if (job.status !== 'available') return;
@@ -65,7 +74,10 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
     if (newSelected.has(id)) {
       newSelected.delete(id);
     } else {
-      if (newSelected.size === 0 || job.client_id === selectedClientId) {
+      if (
+        newSelected.size === 0 ||
+        (job.client_id === selectedClientId && job.account_id === selectedAccountId)
+      ) {
         newSelected.add(id);
       }
     }
@@ -73,6 +85,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   };
 
   const resetForm = () => {
+    setAccountId(accountFilter !== 'all' ? accountFilter : defaultAccountId);
     setClientId('');
     setDescription('');
     setWorkTypeId('custom');
@@ -90,6 +103,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
 
   const openEditDialog = (job: Job) => {
     setEditingJob(job);
+    setAccountId(job.account_id || defaultAccountId);
     setClientId(job.client_id);
     setDescription(job.description);
     setWorkTypeId(job.work_type_id || 'custom');
@@ -106,11 +120,12 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   };
 
   const handleCreateJob = async () => {
-    if (!clientId || !description || !amount) return;
+    if (!accountId || !clientId || !description || !amount) return;
 
     setLoading(true);
     try {
       const newJob = await createJob({
+        account_id: accountId,
         client_id: clientId,
         description,
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
@@ -129,11 +144,12 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   };
 
   const handleUpdateJob = async () => {
-    if (!editingJob || !clientId || !description || !amount) return;
+    if (!editingJob || !accountId || !clientId || !description || !amount) return;
 
     setLoading(true);
     try {
       const updated = await updateJob(editingJob.id, {
+        account_id: accountId,
         client_id: clientId,
         description,
         work_type_id: workTypeId === 'custom' ? null : workTypeId,
@@ -164,7 +180,7 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
   const handleCreateInvoice = async () => {
     if (!selectedClientId || selectedJobs.size === 0) return;
     try {
-      await createInvoice(selectedClientId, Array.from(selectedJobs));
+      await createInvoice(selectedClientId, Array.from(selectedJobs), selectedAccountId);
       setSelectedJobs(new Set());
       router.push('/invoices');
     } catch (err) {
@@ -186,17 +202,34 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         </Button>
       </div>
 
-      <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Все статусы" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Все статусы</SelectItem>
-          <SelectItem value="available">Свободные</SelectItem>
-          <SelectItem value="invoiced">В акте</SelectItem>
-          <SelectItem value="paid">Оплаченные</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex flex-wrap gap-3">
+        {accounts.length > 1 && (
+          <Select value={accountFilter} onValueChange={(v) => { setAccountFilter(v); setSelectedJobs(new Set()); }}>
+            <SelectTrigger className="w-[210px]">
+              <Building2 className="h-4 w-4 mr-2 text-gray-400" />
+              <SelectValue placeholder="Все счета" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все счета</SelectItem>
+              {accounts.map(acc => (
+                <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Все статусы" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все статусы</SelectItem>
+            <SelectItem value="available">Свободные</SelectItem>
+            <SelectItem value="invoiced">В акте</SelectItem>
+            <SelectItem value="paid">Оплаченные</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {filteredJobs.length === 0 ? (
         <EmptyState
@@ -214,12 +247,12 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredJobs.map((job) => {
             const status = statusConfig[job.status];
-            const canSelect = job.status === 'available' && 
-              (selectedJobs.size === 0 || job.client_id === selectedClientId);
+            const canSelect = job.status === 'available' &&
+              (selectedJobs.size === 0 || (job.client_id === selectedClientId && job.account_id === selectedAccountId));
 
             return (
-              <Card 
-                key={job.id} 
+              <Card
+                key={job.id}
                 className={selectedJobs.has(job.id) ? 'ring-2 ring-blue-500' : ''}
               >
                 <CardContent className="p-4">
@@ -227,6 +260,9 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                     <div className="flex-1">
                       <h3 className="font-medium">{job.description}</h3>
                       <p className="text-sm text-gray-500">{job.client?.name}</p>
+                      {job.account && accounts.length > 1 && (
+                        <p className="text-xs text-blue-600 mt-0.5">{job.account.name}</p>
+                      )}
                     </div>
                     {job.status === 'available' && (
                       <div className="flex items-center gap-2">
@@ -239,8 +275,8 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                           />
                         )}
                         {canEditJob(job) && (
-                          <button 
-                            onClick={() => openEditDialog(job)} 
+                          <button
+                            onClick={() => openEditDialog(job)}
                             className="text-blue-500 hover:text-blue-700 transition-colors"
                             title="Редактировать"
                           >
@@ -248,8 +284,8 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
                           </button>
                         )}
                         {isAdmin && (
-                          <button 
-                            onClick={() => handleDeleteJob(job.id)} 
+                          <button
+                            onClick={() => handleDeleteJob(job.id)}
                             className="text-red-500 hover:text-red-700 transition-colors"
                             title="Удалить"
                           >
@@ -305,6 +341,21 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {accounts.length > 1 && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Расчётный счёт (филиал)</label>
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите счёт" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(acc => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium mb-1">Клиент</label>
               <Select value={clientId} onValueChange={setClientId}>
@@ -320,8 +371,8 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Описание</label>
-              <Input 
-                value={description} 
+              <Input
+                value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="Редизайн главной страницы"
               />
@@ -351,8 +402,8 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             {workTypeId === 'custom' && (
               <div>
                 <label className="block text-sm font-medium mb-1">Название</label>
-                <Input 
-                  value={customWorkName} 
+                <Input
+                  value={customWorkName}
                   onChange={e => setCustomWorkName(e.target.value)}
                   placeholder="Консультация"
                 />
@@ -380,9 +431,9 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Сумма (₽)</label>
-              <Input 
+              <Input
                 type="number"
-                value={amount} 
+                value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="100000"
               />
@@ -392,10 +443,10 @@ export function JobsList({ initialJobs, clients, workTypes, currentUser }: JobsL
             <Button variant="outline" onClick={handleCloseDialog}>
               Отмена
             </Button>
-            <Button 
-              onClick={editingJob ? handleUpdateJob : handleCreateJob} 
-              loading={loading} 
-              disabled={!clientId || !description || !amount}
+            <Button
+              onClick={editingJob ? handleUpdateJob : handleCreateJob}
+              loading={loading}
+              disabled={!accountId || !clientId || !description || !amount}
             >
               {editingJob ? 'Сохранить' : 'Создать'}
             </Button>

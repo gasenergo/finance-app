@@ -7,13 +7,14 @@ import { calculateDistribution } from '@/lib/engine/distribution';
 import type { Participant } from '@/lib/engine/distribution';
 import { getCurrentUserId, requireAdmin } from '@/lib/auth';
 
-export async function getInvoices() {
+export async function getInvoices(accountId?: string) {
   const supabase = await createClient();
-  
-  const { data } = await supabase
+
+  let query = supabase
     .from('invoices')
     .select(`
       *,
+      account:accounts(id, name),
       client:clients(id, name, inn, director_name),
       creator:profiles(id, full_name),
       jobs:invoice_jobs(
@@ -21,17 +22,26 @@ export async function getInvoices() {
       )
     `)
     .order('created_at', { ascending: false });
-  
+
+  if (accountId) {
+    query = query.eq('account_id', accountId);
+  }
+
+  const { data } = await query;
+
   return data || [];
 }
 
-async function getNextInvoiceNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+async function getNextInvoiceNumber(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  accountId: string
+): Promise<string> {
   const { data: existing } = await supabase
     .from('invoices')
-    .select('invoice_number');
+    .select('invoice_number')
+    .eq('account_id', accountId);
 
-  // Новые акты нумеруются простыми числами: 10, 11, 12… (без префикса INV-).
-  // Если простые номера уже есть — продолжаем с максимального; иначе стартуем с 10.
+  // Новые акты нумеруются простыми числами: 10, 11, 12… внутри каждого счёта.
   const plainNumbers = (existing ?? [])
     .map(row => String(row.invoice_number).trim())
     .filter(s => /^\d+$/.test(s))
@@ -41,7 +51,7 @@ async function getNextInvoiceNumber(supabase: Awaited<ReturnType<typeof createCl
   return String(next);
 }
 
-export async function createInvoice(clientId: string, jobIds: string[]) {
+export async function createInvoice(clientId: string, jobIds: string[], accountId?: string) {
   const supabase = await createClient();
   const userId = await getCurrentUserId();
 
@@ -49,10 +59,10 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
     throw new Error('Укажите клиента и хотя бы одну работу');
   }
 
-  // Получаем работы и считаем сумму
+  // Получаем работы, их суммы и привязку к счёту
   const { data: jobs, error: jobsError } = await supabase
     .from('jobs')
-    .select('id, amount')
+    .select('id, amount, account_id')
     .in('id', jobIds)
     .eq('status', 'available');
 
@@ -62,15 +72,27 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
     throw new Error('Работы не найдены или уже в акте');
   }
 
+  // Проверяем, что все выбранные работы относятся к одному счёту
+  const uniqueAccountIds = Array.from(new Set(jobs.map(j => j.account_id)));
+  if (uniqueAccountIds.length > 1) {
+    throw new Error('Нельзя объединить в один акт работы из разных филиалов (счетов)');
+  }
+
+  const resolvedAccountId = accountId || uniqueAccountIds[0];
+  if (accountId && uniqueAccountIds[0] !== accountId) {
+    throw new Error('Выбранные работы принадлежат другому счёту');
+  }
+
   const totalAmount = jobs.reduce((sum, job) => sum + Number(job.amount), 0);
 
-  // Генерируем номер счёта
-  const invoiceNumber = await getNextInvoiceNumber(supabase);
+  // Генерируем номер счёта внутри выбранного филиала
+  const invoiceNumber = await getNextInvoiceNumber(supabase, resolvedAccountId);
 
   // Создаём счёт
   const { data: invoice, error } = await supabase
     .from('invoices')
     .insert({
+      account_id: resolvedAccountId,
       invoice_number: invoiceNumber,
       client_id: clientId,
       total_amount: totalAmount,
@@ -100,7 +122,7 @@ export async function createInvoice(clientId: string, jobIds: string[]) {
   revalidatePath('/jobs');
   revalidatePath('/invoices');
   revalidatePath('/');
-  
+
   return invoice;
 }
 
@@ -112,16 +134,16 @@ export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | '
     .from('invoices')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', invoiceId);
-  
+
   if (error) throw error;
-  
+
   // Если отменён — возвращаем работы в статус available
   if (status === 'cancelled') {
     const { data: invoiceJobs } = await supabase
       .from('invoice_jobs')
       .select('job_id')
       .eq('invoice_id', invoiceId);
-    
+
     if (invoiceJobs && invoiceJobs.length > 0) {
       const { error: jobError } = await supabase
         .from('jobs')
@@ -131,11 +153,11 @@ export async function updateInvoiceStatus(invoiceId: string, status: 'draft' | '
       if (jobError) throw jobError;
     }
   }
-  
+
   revalidatePath('/invoices');
   revalidatePath('/jobs');
   revalidatePath('/');
-  
+
   return { success: true };
 }
 
@@ -147,7 +169,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
     throw new Error('Выберите хотя бы одного участника');
   }
 
-  // Получаем счёт с клиентом
+  // Получаем счёт с клиентом и работами
   const { data: invoice } = await supabase
     .from('invoices')
     .select(`
@@ -159,15 +181,36 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
     `)
     .eq('id', invoiceId)
     .single();
-    
+
   if (!invoice) throw new Error('Счёт не найден');
   if (invoice.status === 'paid') throw new Error('Счёт уже оплачен');
   if (invoice.status === 'cancelled') throw new Error('Счёт отменён');
 
-  // Получаем настройки и фонд
-  const [{ data: settings }, { data: fund }, { data: participants }] = await Promise.all([
-    supabase.from('settings').select('*').single(),
-    supabase.from('fund').select('*').single(),
+  const accountId: string = invoice.account_id;
+
+  // Проверяем наличие существующих транзакций дохода по этому акту
+  const { data: existingIncomeTxs, error: txError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('related_invoice_id', invoiceId)
+    .eq('type', 'income')
+    .limit(1);
+
+  if (txError) {
+    throw new Error(`Ошибка при проверке транзакций: ${txError.message}`);
+  }
+
+  if (existingIncomeTxs && existingIncomeTxs.length > 0) {
+    throw new Error('Для этого акта уже существует транзакция дохода');
+  }
+
+  // Получаем настройки, фонд конкретного счёта и активных участников
+  const [{ data: account }, { data: participants }] = await Promise.all([
+    supabase
+      .from('accounts')
+      .select('*')
+      .eq('id', accountId)
+      .single(),
     supabase
       .from('profiles')
       .select('id, full_name, participant_type, percentage_rate')
@@ -175,8 +218,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       .not('participant_type', 'is', null)
   ]);
 
-  if (!settings) throw new Error('Настройки не найдены');
-  if (!fund) throw new Error('Фонд не найден');
+  if (!account) throw new Error('Расчётный счёт не найден');
 
   // Преобразуем участников
   const mappedParticipants: Participant[] = (participants || []).map(p => ({
@@ -186,38 +228,42 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
     rate: p.percentage_rate
   }));
 
-  // Определяем ставку налога
-  const taxRate = invoice.client?.tax_rate ?? settings.tax_rate;
+  // Определяем ставку налога (индивидуальная клиента или базовая ставка счёта)
+  const taxRate = invoice.client?.tax_rate ?? Number(account.tax_rate);
 
-  // Рассчитываем распределение только для выбранных участников
+ // Рассчитываем распределение только для выбранных участников
   const distribution = calculateDistribution(
-    invoice.total_amount,
-    { ...settings, tax_rate: taxRate },
-    fund.current_balance,
+    Number(invoice.total_amount),
+    {
+      tax_rate: taxRate,
+      fund_contribution_rate: Number(account.fund_contribution_rate),
+      fund_limit: Number(account.fund_limit),
+    },
+    Number(account.current_fund_balance),
     mappedParticipants,
-    participantIds  // ← передаём список участников
+    participantIds
   );
 
-  // Получаем ID категорий
+  // Получаем ID системных категорий
   const { data: categories } = await supabase
     .from('expense_categories')
     .select('id, slug')
     .in('slug', ['tax', 'fund_contribution']);
-    
+
   const categoryMap = new Map(categories?.map(c => [c.slug, c.id]) || []);
 
   // === СОЗДАЁМ ТРАНЗАКЦИИ ===
   const date = new Date().toISOString().split('T')[0];
   const timestamp = new Date().toISOString();
 
-  // Список действий отката на случай сбоя середине процесса
   const rollbacks: Array<() => Promise<void>> = [];
 
   try {
-    // 1. Доход
+    // 1. Доход на счёт акта
     const incomeResult = await supabase.from('transactions').insert({
       date,
       type: 'income',
+      account_id: accountId,
       description: `Оплата акта ${invoice.invoice_number}`,
       amount: invoice.total_amount,
       related_invoice_id: invoiceId,
@@ -230,6 +276,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       const taxResult = await supabase.from('transactions').insert({
         date,
         type: 'expense',
+        account_id: accountId,
         category_id: categoryMap.get('tax'),
         description: `Налог по акту ${invoice.invoice_number}`,
         amount: distribution.breakdown.taxAmount,
@@ -244,6 +291,7 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       const fundTxResult = await supabase.from('transactions').insert({
         date,
         type: 'expense',
+        account_id: accountId,
         category_id: categoryMap.get('fund_contribution'),
         description: `Отчисление в фонд по акту ${invoice.invoice_number}`,
         amount: distribution.breakdown.fundContribution,
@@ -253,38 +301,40 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       if (fundTxResult.error) throw new Error(`Не удалось записать отчисление в фонд: ${fundTxResult.error.message}`);
     }
 
-    // 4. Обновляем фонд
+    // 4. Обновляем баланс резервного фонда конкретного счёта
     const fundResult = await supabase
-      .from('fund')
+      .from('accounts')
       .update({
-        current_balance: distribution.breakdown.newFundBalance,
+        current_fund_balance: distribution.breakdown.newFundBalance,
         updated_at: timestamp
       })
-      .eq('id', 1);
+      .eq('id', accountId);
     if (fundResult.error) throw new Error(`Не удалось обновить фонд: ${fundResult.error.message}`);
 
     rollbacks.push(async () => {
       await supabase
-        .from('fund')
+        .from('accounts')
         .update({
-          current_balance: fund.current_balance,
+          current_fund_balance: account.current_fund_balance,
           updated_at: timestamp
         })
-        .eq('id', 1);
+        .eq('id', accountId);
     });
 
-    // 5. Обновляем балансы участников
+    // 5. Обновляем балансы участников в разрезе этого счёта
     for (const update of distribution.balanceUpdates) {
       const balanceResult = await supabase.rpc('increment_balance', {
         p_user_id: update.userId,
-        p_amount: update.amount
+        p_amount: update.amount,
+        p_account_id: accountId
       });
       if (balanceResult.error) throw new Error(`Не удалось начислить баланс: ${balanceResult.error.message}`);
 
       rollbacks.push(async () => {
         await supabase.rpc('decrement_balance', {
           p_user_id: update.userId,
-          p_amount: update.amount
+          p_amount: update.amount,
+          p_account_id: accountId
         });
       });
     }
@@ -319,12 +369,11 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
       if (jobsResult.error) throw new Error(`Не удалось обновить статус работ: ${jobsResult.error.message}`);
     }
   } catch (error) {
-    // Откатываем частично применённые изменения балансов и фонда
     for (const rollback of rollbacks.reverse()) {
       try {
         await rollback();
       } catch {
-        // Игнорируем ошибки отката, главное — не потерять исходную ошибку
+        // Игнорируем ошибки отката, чтобы сохранить исходную ошибку
       }
     }
     throw error;
@@ -334,10 +383,10 @@ export async function markInvoiceAsPaid(invoiceId: string, participantIds: strin
   revalidatePath('/invoices');
   revalidatePath('/cashflow');
   revalidatePath('/jobs');
-  
-  return { 
-    success: true, 
-    breakdown: distribution.breakdown 
+
+  return {
+    success: true,
+    breakdown: distribution.breakdown
   };
 }
 
@@ -345,23 +394,20 @@ export async function deleteInvoice(invoiceId: string) {
   await requireAdmin();
   const supabase = await createClient();
 
-  // Получаем счёт
   const { data: invoice } = await supabase
     .from('invoices')
     .select('status')
     .eq('id', invoiceId)
     .single();
-  
+
   if (!invoice) throw new Error('Счёт не найден');
   if (invoice.status === 'paid') throw new Error('Нельзя удалить оплаченный акт');
 
-  // Получаем связанные работы
   const { data: invoiceJobs } = await supabase
     .from('invoice_jobs')
     .select('job_id')
     .eq('invoice_id', invoiceId);
 
-  // Возвращаем работы в статус available
   if (invoiceJobs && invoiceJobs.length > 0) {
     const { error: jobError } = await supabase
       .from('jobs')
@@ -371,7 +417,6 @@ export async function deleteInvoice(invoiceId: string) {
     if (jobError) throw jobError;
   }
 
-  // Удаляем связи
   const { error: linkError } = await supabase
     .from('invoice_jobs')
     .delete()
@@ -379,7 +424,6 @@ export async function deleteInvoice(invoiceId: string) {
 
   if (linkError) throw linkError;
 
-  // Удаляем счёт
   const { error } = await supabase
     .from('invoices')
     .delete()
@@ -390,19 +434,19 @@ export async function deleteInvoice(invoiceId: string) {
   revalidatePath('/invoices');
   revalidatePath('/jobs');
   revalidatePath('/');
-  
+
   return { success: true };
 }
 
 export async function getParticipantsForPayment() {
   const supabase = await createClient();
-  
+
   const { data } = await supabase
     .from('profiles')
     .select('id, full_name, participant_type, percentage_rate')
     .eq('is_active', true)
     .not('participant_type', 'is', null)
     .order('full_name');
-  
+
   return data || [];
 }

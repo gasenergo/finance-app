@@ -2,85 +2,83 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin'; // Нужны админ права для списаний
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/auth';
 
-// 1. Получить сумму "Свободных денег"
-export async function getFreeCashAmount() {
+// 1. Получить сумму "Свободных денег" по счёту или по всей студии
+export async function getFreeCashAmount(accountId?: string) {
   const supabase = await createClient();
 
-  // Получаем настройки для fund_limit
-  const { data: settings } = await supabase.from('settings').select('fund_limit').single();
+  let accountsQuery = supabase.from('accounts').select('fund_limit').eq('is_active', true);
+  let balancesQuery = supabase.from('balances').select('available_amount');
 
-  // Получаем сумму всех балансов пользователей
-  const { data: balances } = await supabase.from('balances').select('available_amount');
-  const totalUserBalances = balances?.reduce((sum, b) => sum + b.available_amount, 0) || 0;
+  if (accountId) {
+    accountsQuery = accountsQuery.eq('id', accountId);
+    balancesQuery = balancesQuery.eq('account_id', accountId);
+  }
 
-  // Формула: Фонд лимит - Обязательства перед людьми (свободные деньги для возврата)
-  const fundLimit = settings?.fund_limit ?? 500000;
-  const freeCash = fundLimit - totalUserBalances;
+  const [{ data: accounts }, { data: balances }] = await Promise.all([
+    accountsQuery,
+    balancesQuery
+  ]);
 
+  const totalFundLimit = accounts?.reduce((sum, a) => sum + Number(a.fund_limit), 0) ?? 500000;
+  const totalUserBalances = balances?.reduce((sum, b) => sum + Number(b.available_amount), 0) || 0;
 
-
-  return Math.max(0, freeCash); // Не показываем минус, если вдруг что-то не сошлось
+  return Math.max(0, totalFundLimit - totalUserBalances);
 }
 
-// 1.5. Получить текущий баланс фонда
-export async function getFundBalance() {
+// 1.5. Получить текущий баланс фонда по счёту (или суммарно по всем счетам)
+export async function getFundBalance(accountId?: string) {
   const supabase = await createClient();
 
-  const { data: fund } = await supabase
-    .from('fund')
-    .select('current_balance')
-    .eq('id', 1)
-    .single();
+  let query = supabase.from('accounts').select('current_fund_balance').eq('is_active', true);
+  if (accountId) {
+    query = query.eq('id', accountId);
+  }
 
-  return fund?.current_balance ?? 0;
+  const { data: accounts } = await query;
+  return accounts?.reduce((sum, a) => sum + Number(a.current_fund_balance), 0) ?? 0;
 }
 
-// 2. Выписать премию (из фонда)
-export async function giveBonus(userId: string, amount: number) {
+// 2. Выписать премию (из фонда конкретного счёта)
+export async function giveBonus(userId: string, amount: number, accountId: string) {
   const adminClient = createAdminClient();
   const adminId = await requireAdmin();
 
+  if (!accountId) {
+    throw new Error('Выберите расчётный счёт (филиал)');
+  }
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('Некорректная сумма');
   }
 
-  // 1. Получаем текущий баланс фонда
-  const fundBalance = await getFundBalance();
+  // 1. Атомарно списываем средства с фонда выбранного счёта (RPC проверит остаток и заблокирует строку)
+  const { error: fundError } = await adminClient.rpc('decrement_fund', {
+    p_amount: amount,
+    p_account_id: accountId
+  });
 
-  if (amount > fundBalance) {
-    throw new Error('Недостаточно средств в фонде');
-  }
+  if (fundError) throw new Error(fundError.message);
 
-  // 2. Списываем средства с фонда
-  const { error: fundError } = await adminClient
-    .from('fund')
-    .update({
-      current_balance: fundBalance - amount,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', 1);
-
-  if (fundError) throw fundError;
-
-  // 3. Начисляем баланс пользователю
+  // 2. Начисляем баланс пользователю в разрезе этого счёта
   const { error: balanceError } = await adminClient.rpc('increment_balance', {
     p_user_id: userId,
-    p_amount: amount
+    p_amount: amount,
+    p_account_id: accountId
   });
 
   if (balanceError) throw balanceError;
 
-  // 4. Создаём запись в cashflow как income
+  // 3. Создаём запись в cashflow
   const { error: transactionError } = await adminClient
     .from('transactions')
     .insert({
+      account_id: accountId,
       date: new Date().toISOString().split('T')[0],
       type: 'income',
-      description: `Премия из фонда`,
+      description: 'Премия из фонда',
       amount: amount,
       related_user_id: userId,
       created_by: adminId
@@ -95,74 +93,60 @@ export async function giveBonus(userId: string, amount: number) {
   return { success: true };
 }
 
-// 3. Вернуть деньги в фонд (с баланса партнера)
-export async function returnToCompanyPot(userId: string, amount: number) {
+// 3. Вернуть деньги в фонд (с баланса участника в конкретном филиале)
+export async function returnToCompanyPot(userId: string, amount: number, accountId: string) {
   const adminId = await requireAdmin();
   const adminClient = createAdminClient();
 
+  if (!accountId) {
+    throw new Error('Выберите расчётный счёт (филиал)');
+  }
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('Некорректная сумма');
   }
 
-  // Проверяем баланс пользователя
-  const { data: balance } = await adminClient
-    .from('balances')
-    .select('available_amount')
-    .eq('user_id', userId)
-    .single();
-
-  if (!balance || balance.available_amount < amount) {
-    throw new Error('Недостаточно средств на балансе пользователя');
-  }
-
-  // Списываем средства с баланса пользователя
+  // 1. Атомарно списываем с баланса участника по выбранному счёту
   const { error: decrementError } = await adminClient.rpc('decrement_balance', {
     p_user_id: userId,
-    p_amount: amount
+    p_amount: amount,
+    p_account_id: accountId
   });
 
-  if (decrementError) throw decrementError;
+  if (decrementError) throw new Error(decrementError.message);
 
-  // Получаем текущий баланс фонда
-  const { data: currentFund } = await adminClient
-    .from('fund')
-    .select('current_balance')
-    .eq('id', 1)
+  // 2. Получаем текущий баланс фонда этого счёта и пополняем его
+  const { data: account } = await adminClient
+    .from('accounts')
+    .select('current_fund_balance')
+    .eq('id', accountId)
     .single();
 
-  if (!currentFund) throw new Error('Фонд не найден');
+  if (!account) throw new Error('Расчётный счёт не найден');
 
-  // Начисляем средства в фонд
   const { error: fundError } = await adminClient
-    .from('fund')
+    .from('accounts')
     .update({
-      current_balance: currentFund.current_balance + amount,
+      current_fund_balance: Number(account.current_fund_balance) + amount,
       updated_at: new Date().toISOString()
     })
-    .eq('id', 1);
+    .eq('id', accountId);
 
   if (fundError) throw fundError;
 
-  // Получаем текущего пользователя для записи транзакции
-  const createdBy = adminId;
-
-  // Создаём запись в cashflow как income
+  // 3. Создаём запись в cashflow
   const { error: transactionError } = await adminClient
     .from('transactions')
     .insert({
+      account_id: accountId,
       date: new Date().toISOString().split('T')[0],
       type: 'income',
-      description: `Возврат в фонд`,
+      description: 'Возврат в фонд',
       amount: amount,
       related_user_id: userId,
-      created_by: createdBy
+      created_by: adminId
     });
 
   if (transactionError) throw transactionError;
-
-  // Логика:
-  // Мы уменьшили долг компании перед юзером и увеличили фонд.
-  // Это правильно отражает возврат денег в компанию.
 
   revalidatePath('/');
   revalidatePath('/admin');

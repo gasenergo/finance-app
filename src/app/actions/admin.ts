@@ -6,15 +6,104 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/auth';
 
-// ============ SETTINGS ============
+// ============ ACCOUNTS (СЧЕТА / ФИЛИАЛЫ) ============
 
-export async function getSettings() {
+export async function getAllAccounts() {
   const supabase = await createClient();
-  const { data } = await supabase.from('settings').select('*').single();
+  const { data } = await supabase
+    .from('accounts')
+    .select('*')
+    .order('created_at', { ascending: true });
+  return data || [];
+}
+
+export async function createAccount(data: {
+  name: string;
+  bank_name?: string | null;
+  account_number?: string | null;
+  tax_rate: number;
+  fund_contribution_rate: number;
+  fund_limit: number;
+}) {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  if (!data.name.trim()) throw new Error('Введите название счёта');
+
+  const { data: account, error } = await supabase
+    .from('accounts')
+    .insert({
+      name: data.name.trim(),
+      bank_name: data.bank_name?.trim() || null,
+      account_number: data.account_number?.trim() || null,
+      tax_rate: data.tax_rate,
+      fund_contribution_rate: data.fund_contribution_rate,
+      fund_limit: data.fund_limit,
+      current_fund_balance: 0,
+      is_active: true
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  revalidatePath('/admin');
+  revalidatePath('/');
+  return account;
+}
+
+export async function updateAccount(id: string, data: {
+  name: string;
+  bank_name?: string | null;
+  account_number?: string | null;
+  tax_rate: number;
+  fund_contribution_rate: number;
+  fund_limit: number;
+  is_active: boolean;
+}) {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  if (!Number.isFinite(data.tax_rate) || !Number.isFinite(data.fund_contribution_rate) || !Number.isFinite(data.fund_limit)) {
+    throw new Error('Некорректные числовые параметры счёта');
+  }
+
+  const { error } = await supabase
+    .from('accounts')
+    .update({
+      name: data.name.trim(),
+      bank_name: data.bank_name?.trim() || null,
+      account_number: data.account_number?.trim() || null,
+      tax_rate: data.tax_rate,
+      fund_contribution_rate: data.fund_contribution_rate,
+      fund_limit: data.fund_limit,
+      is_active: data.is_active,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', id);
+
+  if (error) throw error;
+
+  revalidatePath('/admin');
+  revalidatePath('/');
+  return { success: true };
+}
+
+// Совместимость со старым интерфейсом настроек (работает с первым счётом, если accountId не передан)
+export async function getSettings(accountId?: string) {
+  const supabase = await createClient();
+  let query = supabase.from('accounts').select('*');
+  if (accountId) {
+    query = query.eq('id', accountId);
+  } else {
+    query = query.order('created_at', { ascending: true }).limit(1);
+  }
+  const { data } = await query.single();
   return data;
 }
 
 export async function updateSettings(data: {
+  account_id?: string;
   tax_rate: number;
   fund_contribution_rate: number;
   fund_limit: number;
@@ -26,15 +115,28 @@ export async function updateSettings(data: {
     throw new Error('Некорректные значения настроек');
   }
 
+  let targetId = data.account_id;
+  if (!targetId) {
+    const { data: firstAcc } = await supabase
+      .from('accounts')
+      .select('id')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+    targetId = firstAcc?.id;
+  }
+
+  if (!targetId) throw new Error('Счёт не найден');
+
   const { error } = await supabase
-    .from('settings')
+    .from('accounts')
     .update({
       tax_rate: data.tax_rate,
       fund_contribution_rate: data.fund_contribution_rate,
       fund_limit: data.fund_limit,
       updated_at: new Date().toISOString()
     })
-    .eq('id', 1);
+    .eq('id', targetId);
 
   if (error) throw error;
 
@@ -49,23 +151,27 @@ export async function getTeamWithBalances() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from('balances')
-    .select('*, user:profiles(*)')
-    .order('available_amount', { ascending: false });
+  const [{ data: profiles }, { data: balances }] = await Promise.all([
+    supabase.from('profiles').select('*').order('full_name'),
+    supabase.from('balances').select('*, account:accounts(id, name)')
+  ]);
 
-  const team = (data || []).map(b => ({
-    id: b.user.id,
-    full_name: b.user.full_name,
-    role: b.user.role,
-    participant_type: b.user.participant_type,
-    percentage_rate: b.user.percentage_rate,
-    is_active: b.user.is_active,
-    balance: [{
-      available_amount: b.available_amount,
-      total_earned: b.total_earned,
-      total_withdrawn: b.total_withdrawn
-    }]
+  const team = (profiles || []).map(p => ({
+    id: p.id,
+    full_name: p.full_name,
+    role: p.role,
+    participant_type: p.participant_type,
+    percentage_rate: p.percentage_rate,
+    is_active: p.is_active,
+    balance: (balances || [])
+      .filter(b => b.user_id === p.id)
+      .map(b => ({
+        account_id: b.account_id,
+        account_name: b.account?.name ?? 'Счёт',
+        available_amount: Number(b.available_amount),
+        total_earned: Number(b.total_earned),
+        total_withdrawn: Number(b.total_withdrawn)
+      }))
   }));
 
   return team;
@@ -82,7 +188,6 @@ export async function createUser(data: {
   await requireAdmin();
   const adminClient = createAdminClient();
 
-  // Создаём пользователя в Auth
   const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email: data.email,
     password: data.password,
@@ -92,7 +197,6 @@ export async function createUser(data: {
   if (authError) throw authError;
   if (!authData.user) throw new Error('Не удалось создать пользователя');
 
-  // Создаём профиль (upsert для обработки дубликатов)
   const { error: profileError } = await adminClient
     .from('profiles')
     .upsert({
@@ -106,17 +210,27 @@ export async function createUser(data: {
 
   if (profileError) throw profileError;
 
-  // Создаём начальный баланс (upsert для обработки дубликатов)
-  const { error: balanceError } = await adminClient
-    .from('balances')
-    .upsert({
-      user_id: authData.user.id,
-      available_amount: 0,
-      total_earned: 0,
-      total_withdrawn: 0
-    });
+  // Создаём начальные балансы по всем активным счетам
+  const { data: accounts } = await adminClient
+    .from('accounts')
+    .select('id')
+    .eq('is_active', true);
 
-  if (balanceError) throw balanceError;
+  if (accounts && accounts.length > 0) {
+    const { error: balanceError } = await adminClient
+      .from('balances')
+      .upsert(
+        accounts.map(acc => ({
+          user_id: authData.user.id,
+          account_id: acc.id,
+          available_amount: 0,
+          total_earned: 0,
+          total_withdrawn: 0
+        }))
+      );
+
+    if (balanceError) throw balanceError;
+  }
 
   revalidatePath('/admin');
   return { success: true };
@@ -318,7 +432,6 @@ export async function deleteExpenseCategory(id: string) {
   await requireAdmin();
   const supabase = await createClient();
 
-  // Проверяем что категория не системная
   const { data: category } = await supabase
     .from('expense_categories')
     .select('is_system')

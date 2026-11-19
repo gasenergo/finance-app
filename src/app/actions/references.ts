@@ -1,6 +1,17 @@
+// src/app/actions/references.ts
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+
+export async function getAccounts() {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true });
+  return data || [];
+}
 
 export async function getClients() {
   const supabase = await createClient();

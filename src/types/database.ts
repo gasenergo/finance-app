@@ -1,8 +1,24 @@
+// src/types/database.ts
+
 export type UserRole = 'admin' | 'user';
 export type ParticipantType = 'partner' | 'percentage';
 export type JobStatus = 'available' | 'invoiced' | 'paid';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled';
-export type TransactionType = 'income' | 'expense' | 'payout';
+export type TransactionType = 'income' | 'expense' | 'payout' | 'transfer';
+
+export interface Account {
+  id: string;
+  name: string;
+  bank_name: string | null;
+  account_number: string | null;
+  tax_rate: number;
+  fund_contribution_rate: number;
+  fund_limit: number;
+  current_fund_balance: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Profile {
   id: string;
@@ -58,6 +74,7 @@ export interface Fund {
 
 export interface Job {
   id: string;
+  account_id: string;
   client_id: string;
   created_by: string;
   description: string;
@@ -69,6 +86,7 @@ export interface Job {
   status: JobStatus;
   created_at: string;
   updated_at: string;
+  account?: Account;
   client?: Client;
   creator?: Profile;
   work_type?: WorkType;
@@ -76,6 +94,7 @@ export interface Job {
 
 export interface Invoice {
   id: string;
+  account_id: string;
   invoice_number: string;
   client_id: string;
   total_amount: number;
@@ -84,6 +103,7 @@ export interface Invoice {
   created_by: string;
   created_at: string;
   updated_at: string;
+  account?: Account;
   client?: Client;
   creator?: Profile;
   jobs?: Job[];
@@ -93,6 +113,9 @@ export interface Transaction {
   id: string;
   date: string;
   type: TransactionType;
+  account_id: string;
+  target_account_id: string | null;
+  transfer_group_id: string | null;
   category_id: string | null;
   description: string | null;
   amount: number;
@@ -100,17 +123,21 @@ export interface Transaction {
   related_user_id: string | null;
   created_by: string;
   created_at: string;
+  account?: Account;
+  target_account?: Account;
   category?: ExpenseCategory;
   related_user?: Profile;
 }
 
 export interface Balance {
   user_id: string;
+  account_id: string;
   available_amount: number;
   total_earned: number;
   total_withdrawn: number;
   updated_at: string;
   user?: Profile;
+  account?: Account;
 }
 
 export interface InvoiceParticipant {
@@ -128,6 +155,8 @@ export interface TeamMember {
   percentage_rate: number | null;
   is_active: boolean;
   balance: Array<{
+    account_id: string;
+    account_name?: string;
     available_amount: number;
     total_earned: number;
     total_withdrawn: number;

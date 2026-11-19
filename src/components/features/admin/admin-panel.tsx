@@ -1,3 +1,4 @@
+// src/components/features/admin/admin-panel.tsx
 'use client';
 
 import { useState } from 'react';
@@ -10,8 +11,9 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { 
-  updateSettings,
+import {
+  createAccount,
+  updateAccount,
   createUser,
   updateUser,
   resetUserPassword,
@@ -21,9 +23,10 @@ import {
   updateWorkType,
   createExpenseCategory,
   deleteExpenseCategory,
-  getTeamWithBalances
+  getTeamWithBalances,
+  getAllAccounts
 } from '@/app/actions/admin';
-import type { Settings, Client, WorkType, ExpenseCategory, TeamMember } from '@/types/database';
+import type { Account, Client, WorkType, ExpenseCategory, TeamMember } from '@/types/database';
 
 import { SettingsTab } from './tabs/settings-tab';
 import { TeamTab } from './tabs/team-tab';
@@ -34,7 +37,7 @@ import { FreeCashTab } from './tabs/free-cash-tab';
 import { UserDialog, PasswordDialog } from './tabs/user-dialogs';
 
 interface AdminPanelProps {
-  settings: Settings | null;
+  accounts: Account[];
   team: TeamMember[];
   clients: Client[];
   workTypes: WorkType[];
@@ -44,7 +47,7 @@ interface AdminPanelProps {
 type Tab = 'settings' | 'team' | 'clients' | 'workTypes' | 'categories' | 'freeCash';
 
 export function AdminPanel({
-  settings: initialSettings,
+  accounts: initialAccounts,
   team: initialTeam,
   clients: initialClients,
   workTypes: initialWorkTypes,
@@ -56,15 +59,19 @@ export function AdminPanel({
   const [success, setSuccess] = useState('');
 
   // State
-  const [settings, setSettings] = useState(initialSettings);
+  const [accounts, setAccounts] = useState(initialAccounts);
   const [team, setTeam] = useState(initialTeam);
   const [clients, setClients] = useState(initialClients);
   const [workTypes, setWorkTypes] = useState(initialWorkTypes);
   const [categories, setCategories] = useState(initialCategories);
 
-  const handleTeamUpdate = async () => {
-    const updatedTeam = await getTeamWithBalances();
+  const handleRefreshFinancials = async () => {
+    const [updatedTeam, updatedAccounts] = await Promise.all([
+      getTeamWithBalances(),
+      getAllAccounts()
+    ]);
     setTeam(updatedTeam);
+    setAccounts(updatedAccounts);
   };
 
   // Dialogs
@@ -74,7 +81,7 @@ export function AdminPanel({
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const tabs = [
-    { id: 'settings' as Tab, label: 'Настройки', icon: SettingsIcon },
+    { id: 'settings' as Tab, label: 'Счета и настройки', icon: SettingsIcon },
     { id: 'team' as Tab, label: 'Команда', icon: Users },
     { id: 'clients' as Tab, label: 'Клиенты', icon: Building2 },
     { id: 'workTypes' as Tab, label: 'Виды работ', icon: Briefcase },
@@ -123,16 +130,28 @@ export function AdminPanel({
         </div>
       )}
 
-      {/* Settings Tab */}
-      {activeTab === 'settings' && settings && (
-        <SettingsTab 
-          settings={settings}
-          onSave={async (data) => {
+      {/* Settings & Accounts Tab */}
+      {activeTab === 'settings' && (
+        <SettingsTab
+          accounts={accounts}
+          onSaveAccount={async (id, data) => {
             setLoading(true);
             try {
-              await updateSettings(data);
-              setSettings({ ...settings, ...data });
-              showSuccess('Настройки сохранены');
+              await updateAccount(id, data);
+              setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...data } : acc));
+              showSuccess('Настройки счёта сохранены');
+            } catch (err) {
+              showError(err instanceof Error ? err.message : 'Ошибка');
+            } finally {
+              setLoading(false);
+            }
+          }}
+          onCreateAccount={async (data) => {
+            setLoading(true);
+            try {
+              const created = await createAccount(data);
+              setAccounts(prev => [...prev, created]);
+              showSuccess('Новый счёт добавлен');
             } catch (err) {
               showError(err instanceof Error ? err.message : 'Ошибка');
             } finally {
@@ -166,7 +185,7 @@ export function AdminPanel({
       {activeTab === 'clients' && (
         <ClientsTab
           clients={clients}
-          defaultTaxRate={settings?.tax_rate || 6}
+          defaultTaxRate={accounts[0]?.tax_rate || 6}
           onAdd={async (name, taxRate, inn, directorName) => {
             setLoading(true);
             try {
@@ -194,7 +213,6 @@ export function AdminPanel({
           loading={loading}
         />
       )}
-
 
       {/* Work Types Tab */}
       {activeTab === 'workTypes' && (
@@ -264,9 +282,8 @@ export function AdminPanel({
       {activeTab === 'freeCash' && (
         <FreeCashTab
           team={team}
-          onSuccess={async () => {
-            await handleTeamUpdate();
-          }}
+          accounts={accounts}
+          onSuccess={handleRefreshFinancials}
         />
       )}
 

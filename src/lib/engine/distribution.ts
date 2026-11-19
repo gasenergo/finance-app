@@ -1,7 +1,9 @@
 // src/lib/engine/distribution.ts 
 
 import { roundMoney, calculateTax, calculateFundContribution } from './calculations';
-import type { Settings } from '@/types/database';
+import type { Account } from '@/types/database';
+
+export type DistributionSettings = Pick<Account, 'tax_rate' | 'fund_contribution_rate' | 'fund_limit'>;
 
 export interface Participant {
   id: string;
@@ -42,7 +44,7 @@ export interface DistributionResult {
 
 export function calculateDistribution(
   invoiceAmount: number,
-  settings: Settings,
+  settings: DistributionSettings,
   currentFundBalance: number,
   participants: Participant[],
   activeParticipantIds?: string[]
@@ -97,10 +99,6 @@ export function calculateDistribution(
       partnerPayments[0].amount = roundMoney(partnerPayments[0].amount + remainder);
     }
   } 
-  
-  // ВАЖНО: Блока else нет. 
-  // Если партнеров нет, переменная afterPercentage просто никуда не записывается.
-  // Это и есть наши "Свободные деньги".
 
   const allPayments = [...percentagePayments, ...partnerPayments];
   const totalDistributed = allPayments.reduce((s, p) => s + p.amount, 0);
@@ -113,11 +111,10 @@ export function calculateDistribution(
     afterFund,
     percentagePayments,
     partnerPayments,
-    totalDistributed, // Здесь будет сумма выплат, она может быть меньше чем afterFund
+    totalDistributed,
     newFundBalance
   };
 
-  // Транзакции остаются стандартными
   const transactions: TransactionToCreate[] = [
     { type: 'expense', categorySlug: 'tax', description: 'Налог', amount: taxAmount }
   ];
