@@ -20,17 +20,18 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { getDashboardData } from '@/app/actions/dashboard';
 import { formatCurrency } from '@/lib/engine/calculations';
+import { useAccountContext } from '@/contexts/account-context';
 import type { DashboardData } from '@/app/actions/dashboard';
 import type { Profile, Account } from '@/types/database';
 
 interface DashboardContentProps {
   initialData: DashboardData;
-  accounts: Account[];
+  accounts?: Account[];
   currentUser: Profile;
 }
 
-export function DashboardContent({ initialData, accounts, currentUser }: DashboardContentProps) {
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+export function DashboardContent({ initialData, currentUser }: DashboardContentProps) {
+  const { accounts, selectedAccountId, setSelectedAccountId, activeAccount } = useAccountContext();
   const [data, setData] = useState<DashboardData>(initialData);
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export function DashboardContent({ initialData, accounts, currentUser }: Dashboa
           <p className="text-gray-500 mt-1">
             {selectedAccountId === 'all'
               ? 'Сводный обзор финансов студии'
-              : `Показатели: ${accounts.find(a => a.id === selectedAccountId)?.name || 'Филиал'}`}
+              : `Показатели: ${activeAccount?.name || 'Филиал'}`}
           </p>
         </div>
 

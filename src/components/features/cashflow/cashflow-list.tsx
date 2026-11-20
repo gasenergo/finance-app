@@ -10,8 +10,7 @@ import {
   Wallet,
   Trash2,
   Filter,
-  Calendar,
-  Building2
+  Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,6 +21,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { createExpense, createPayout, createTransfer, deleteTransaction, getTransactions } from '@/app/actions/cashflow';
 import { formatCurrency } from '@/lib/engine/calculations';
+import { useAccountContext } from '@/contexts/account-context';
 import type { TransactionWithRelations } from '@/app/actions/cashflow';
 import type { Profile, ExpenseCategory, Account } from '@/types/database';
 
@@ -37,7 +37,7 @@ interface CashFlowListProps {
   initialTransactions: TransactionWithRelations[];
   categories: ExpenseCategory[];
   members: TeamMember[];
-  accounts: Account[];
+  accounts?: Account[];
   currentUser: Profile;
 }
 
@@ -87,14 +87,12 @@ export function CashFlowList({
   initialTransactions,
   categories,
   members,
-  accounts,
   currentUser
 }: CashFlowListProps) {
   const router = useRouter();
-  const defaultAccountId = accounts[0]?.id || '';
+  const { accounts, selectedAccountId, activeAccount, defaultOperationAccountId } = useAccountContext();
 
   const [transactions, setTransactions] = useState(initialTransactions);
-  const [accountFilter, setAccountFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('all');
   const [loading, setLoading] = useState(false);
@@ -106,7 +104,6 @@ export function CashFlowList({
   const [transferOpen, setTransferOpen] = useState(false);
 
   // Форма расхода
-  const [expenseAccountId, setExpenseAccountId] = useState(defaultAccountId);
   const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
   const [expenseCategory, setExpenseCategory] = useState('');
   const [expenseDescription, setExpenseDescription] = useState('');
@@ -114,8 +111,8 @@ export function CashFlowList({
 
   // Форма выплаты
   const [payoutUser, setPayoutUser] = useState('');
-  const [payoutEarnedAccountId, setPayoutEarnedAccountId] = useState(defaultAccountId);
-  const [payoutPaymentAccountId, setPayoutPaymentAccountId] = useState(defaultAccountId);
+  const [payoutEarnedAccountId, setPayoutEarnedAccountId] = useState(defaultOperationAccountId);
+  const [payoutPaymentAccountId, setPayoutPaymentAccountId] = useState(defaultOperationAccountId);
   const [payoutAmount, setPayoutAmount] = useState('');
   const [payoutDescription, setPayoutDescription] = useState('');
 
@@ -128,19 +125,18 @@ export function CashFlowList({
 
   const isAdmin = currentUser.role === 'admin';
 
-  // Перезагрузка транзакций с корректным running_balance при смене фильтра счёта
+  // Подгружаем транзакции для выбранного на дашборде филиала
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const selectedAcc = accountFilter === 'all' ? undefined : accountFilter;
+      const selectedAcc = selectedAccountId === 'all' ? undefined : selectedAccountId;
       const data = await getTransactions(undefined, undefined, selectedAcc);
       if (active) setTransactions(data);
     };
     load();
     return () => { active = false; };
-  }, [accountFilter, initialTransactions]);
+  }, [selectedAccountId, initialTransactions]);
 
-  // Фильтрация по типу и месяцу
   const filteredTransactions = transactions.filter(tx => {
     const matchType = typeFilter === 'all' || tx.type === typeFilter;
     const matchMonth = monthFilter === 'all' ||
@@ -148,7 +144,6 @@ export function CashFlowList({
     return matchType && matchMonth;
   });
 
-  // Статистика
   const totals = transactions.reduce((acc, tx) => {
     if (tx.type === 'income') acc.income += Number(tx.amount);
     else if (tx.type === 'expense') acc.expense += Number(tx.amount);
@@ -157,7 +152,7 @@ export function CashFlowList({
   }, { income: 0, expense: 0, payout: 0 });
 
   const handleCreateExpense = async () => {
-    if (!expenseAccountId || !expenseCategory || !expenseAmount) {
+    if (!defaultOperationAccountId || !expenseCategory || !expenseAmount) {
       setError('Заполните все поля');
       return;
     }
@@ -167,7 +162,7 @@ export function CashFlowList({
 
     try {
       await createExpense({
-        account_id: expenseAccountId,
+        account_id: defaultOperationAccountId,
         date: expenseDate,
         category_id: expenseCategory,
         description: expenseDescription,
@@ -260,7 +255,6 @@ export function CashFlowList({
   };
 
   const resetExpenseForm = () => {
-    setExpenseAccountId(accountFilter !== 'all' ? accountFilter : defaultAccountId);
     setExpenseDate(new Date().toISOString().split('T')[0]);
     setExpenseCategory('');
     setExpenseDescription('');
@@ -268,10 +262,9 @@ export function CashFlowList({
   };
 
   const resetPayoutForm = () => {
-    const activeAcc = accountFilter !== 'all' ? accountFilter : defaultAccountId;
     setPayoutUser('');
-    setPayoutEarnedAccountId(activeAcc);
-    setPayoutPaymentAccountId(activeAcc);
+    setPayoutEarnedAccountId(defaultOperationAccountId);
+    setPayoutPaymentAccountId(defaultOperationAccountId);
     setPayoutAmount('');
     setPayoutDescription('');
   };
@@ -289,8 +282,8 @@ export function CashFlowList({
   const getAmountPrefix = (tx: TransactionWithRelations) => {
     if (tx.type === 'income') return '+';
     if (tx.type === 'transfer') {
-      if (accountFilter !== 'all') {
-        return tx.target_account_id === accountFilter ? '+' : '-';
+      if (selectedAccountId !== 'all') {
+        return tx.target_account_id === selectedAccountId ? '+' : '-';
       }
       return '⇄ ';
     }
@@ -304,6 +297,11 @@ export function CashFlowList({
         <div>
           <h1 className="text-2xl font-bold">Движение денежных средств</h1>
           <p className="text-sm text-gray-500 mt-1">
+            {accounts.length > 1 && (
+              <span className="font-medium text-gray-700 mr-2">
+                {activeAccount ? activeAccount.name : 'Все счета'} •
+              </span>
+            )}
             Доходы: {formatCurrency(totals.income)} •
             Расходы: {formatCurrency(totals.expense)} •
             Выплаты: {formatCurrency(totals.payout)}
@@ -313,7 +311,7 @@ export function CashFlowList({
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
             {accounts.length > 1 && (
-              <Button variant="outline" onClick={() => { setError(''); setTransferOpen(true); }}>
+              <Button variant="outline" onClick={() => { setError(''); resetTransferForm(); setTransferOpen(true); }}>
                 <ArrowLeftRight className="h-4 w-4 mr-2" />
                 Перевод
               </Button>
@@ -332,21 +330,6 @@ export function CashFlowList({
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        {accounts.length > 1 && (
-          <Select value={accountFilter} onValueChange={setAccountFilter}>
-            <SelectTrigger className="w-[210px]">
-              <Building2 className="h-4 w-4 mr-2 text-gray-400" />
-              <SelectValue placeholder="Счёт" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все счета (студия)</SelectItem>
-              {accounts.map(acc => (
-                <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-[150px]">
             <Filter className="h-4 w-4 mr-2 text-gray-400" />
@@ -400,7 +383,9 @@ export function CashFlowList({
                     <tr className="border-b bg-gray-50">
                       <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Дата</th>
                       <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Тип</th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Счёт</th>
+                      {selectedAccountId === 'all' && accounts.length > 1 && (
+                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Счёт</th>
+                      )}
                       <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Описание</th>
                       <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Сумма</th>
                       <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Баланс</th>
@@ -423,11 +408,13 @@ export function CashFlowList({
                               {config.label}
                             </Badge>
                           </td>
-                          <td className="py-3 px-4 text-xs text-gray-600">
-                            {tx.type === 'transfer' && tx.target_account
-                              ? `${tx.account?.name || 'Счёт'} → ${tx.target_account.name}`
-                              : tx.account?.name || '—'}
-                          </td>
+                          {selectedAccountId === 'all' && accounts.length > 1 && (
+                            <td className="py-3 px-4 text-xs text-gray-600">
+                              {tx.type === 'transfer' && tx.target_account
+                                ? `${tx.account?.name || 'Счёт'} → ${tx.target_account.name}`
+                                : tx.account?.name || '—'}
+                            </td>
+                          )}
                           <td className="py-3 px-4">
                             <div>
                               <p className="text-sm font-medium">
@@ -495,10 +482,8 @@ export function CashFlowList({
                             {tx.description || tx.category?.name || config.label}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {new Date(tx.date).toLocaleDateString('ru-RU')} •{' '}
-                            {tx.type === 'transfer' && tx.target_account
-                              ? `${tx.account?.name} → ${tx.target_account.name}`
-                              : tx.account?.name}
+                            {new Date(tx.date).toLocaleDateString('ru-RU')}
+                            {selectedAccountId === 'all' && tx.account && ` • ${tx.account.name}`}
                           </p>
                         </div>
                       </div>
@@ -549,22 +534,6 @@ export function CashFlowList({
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1.5">Счёт списания (фонд)</label>
-              <Select value={expenseAccountId} onValueChange={setExpenseAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите счёт" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name} (фонд: {formatCurrency(acc.current_fund_balance)})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
               <label className="block text-sm font-medium mb-1.5">Дата</label>
               <Input
                 type="date"
@@ -612,7 +581,7 @@ export function CashFlowList({
             <Button
               onClick={handleCreateExpense}
               loading={loading}
-              disabled={!expenseAccountId || !expenseCategory || !expenseAmount}
+              disabled={!defaultOperationAccountId || !expenseCategory || !expenseAmount}
             >
               Добавить
             </Button>
@@ -650,26 +619,6 @@ export function CashFlowList({
               </Select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Филиал начисления (откуда заработано)</label>
-              <Select
-                value={payoutEarnedAccountId}
-                onValueChange={(val) => {
-                  setPayoutEarnedAccountId(val);
-                  setPayoutPaymentAccountId(val);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите филиал" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {accounts.length > 1 && (
               <div>
                 <label className="block text-sm font-medium mb-1.5">Счёт физического списания</label>
@@ -685,7 +634,7 @@ export function CashFlowList({
                 </Select>
                 {payoutEarnedAccountId !== payoutPaymentAccountId && (
                   <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded mt-1.5">
-                    Счета различаются: система автоматически зафиксирует внутренний заём между филиалами.
+                    Списание с другого филиала: система автоматически зафиксирует внутренний заём.
                   </p>
                 )}
               </div>

@@ -27,12 +27,14 @@ import {
 } from '@/app/actions/invoices';
 import { formatCurrency } from '@/lib/engine/calculations';
 import { buildInvoiceDocData, buildInvoiceHtml, downloadInvoiceWord } from '@/lib/invoice-doc';
+import { useAccountContext } from '@/contexts/account-context';
 import type { InvoiceDocData } from '@/lib/invoice-doc';
 import type { Client, Profile } from '@/types/database';
 import type { DistributionBreakdown } from '@/lib/engine/distribution';
 
 interface InvoiceWithRelations {
   id: string;
+  account_id?: string;
   invoice_number: string;
   client_id: string;
   total_amount: number;
@@ -41,6 +43,12 @@ interface InvoiceWithRelations {
   created_by: string;
   created_at: string;
   updated_at: string;
+  account?: {
+    id: string;
+    name: string;
+    bank_name: string | null;
+    account_number: string | null;
+  } | null;
   client: Client | null;
   creator: Profile | null;
   jobs?: Array<{
@@ -78,6 +86,8 @@ const statusConfig = {
 
 export function InvoicesList({ initialInvoices, currentUser, participants }: InvoicesListProps) {
   const router = useRouter();
+  const { selectedAccountId, activeAccount, accounts } = useAccountContext();
+
   const [invoices, setInvoices] = useState(initialInvoices);
   const [statusFilter, setStatusFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
@@ -101,8 +111,6 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       return;
     }
 
-    // Печать через off-screen iframe в этой же вкладке — без поппер-блокеров и
-    // предпросмотров. iframe имеет реальный размер, поэтому Chromium печатает с первого раза.
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.style.position = 'absolute';
@@ -127,7 +135,6 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
     printWindow.focus();
     printWindow.onafterprint = () => iframe.remove();
 
-    // Дождаться рендеринга документа перед вызовом диалога печати
     window.setTimeout(() => printWindow.print(), 200);
   };
 
@@ -142,18 +149,23 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
 
   const isAdmin = currentUser.role === 'admin';
 
-  const filteredInvoices = invoices.filter(inv => {
+  // Фильтруем по глобально выбранному филиалу, статусу и клиенту
+  const accountScopedInvoices = invoices.filter(
+    inv => selectedAccountId === 'all' || inv.account_id === selectedAccountId
+  );
+
+  const filteredInvoices = accountScopedInvoices.filter(inv => {
     const matchStatus = statusFilter === 'all' || inv.status === statusFilter;
     const matchClient = clientFilter === 'all' || inv.client_id === clientFilter;
     return matchStatus && matchClient;
   });
 
-  // Статистика
+  // Статистика по активному филиалу
   const stats = {
-    total: invoices.length,
-    draft: invoices.filter(i => i.status === 'draft').length,
-    sent: invoices.filter(i => i.status === 'sent').length,
-    paid: invoices.filter(i => i.status === 'paid').length,
+    total: accountScopedInvoices.length,
+    draft: accountScopedInvoices.filter(i => i.status === 'draft').length,
+    sent: accountScopedInvoices.filter(i => i.status === 'sent').length,
+    paid: accountScopedInvoices.filter(i => i.status === 'paid').length,
   };
 
   const handleStatusChange = async (invoiceId: string, newStatus: 'draft' | 'sent' | 'cancelled') => {
@@ -261,6 +273,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       clientName: invoice.client?.name || '—',
       clientInn: invoice.client?.inn || null,
       clientDirector: invoice.client?.director_name || null,
+      accountName: invoice.account?.name || null,
       items: (invoice.jobs ?? []).map(({ job }) => ({
         description: job.custom_work_name || job.work_type?.name || job.description,
         amount: Number(job.amount),
@@ -285,7 +298,7 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
 
   // Уникальные клиенты для фильтра
   const clientsInInvoices = [...new Map(
-    invoices.map(inv => [inv.client_id, { id: inv.client_id, name: inv.client?.name }])
+    accountScopedInvoices.map(inv => [inv.client_id, { id: inv.client_id, name: inv.client?.name }])
   ).values()];
 
   return (
@@ -294,6 +307,11 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
       <div>
         <h1 className="text-2xl font-bold">Акты</h1>
         <p className="text-sm text-gray-500 mt-1">
+          {accounts.length > 1 && (
+            <span className="font-medium text-gray-700 mr-2">
+              {activeAccount ? activeAccount.name : 'Все счета'} •
+            </span>
+          )}
           Всего: {stats.total} • Черновиков: {stats.draft} • Выставлено: {stats.sent} • Оплачено: {stats.paid}
         </p>
       </div>
@@ -364,6 +382,11 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
                           <StatusIcon className="h-3 w-3 mr-1" />
                           {status.label}
                         </Badge>
+                        {selectedAccountId === 'all' && invoice.account && accounts.length > 1 && (
+                          <span className="text-xs text-blue-600 font-medium">
+                            {invoice.account.name}
+                          </span>
+                        )}
                       </div>
                       <p className="text-gray-600">{invoice.client?.name}</p>
                       <p className="text-sm text-gray-400">
@@ -517,7 +540,6 @@ export function InvoicesList({ initialInvoices, currentUser, participants }: Inv
               <FileDown className="h-4 w-4 mr-2" />
               {wordLoading ? 'Формируем...' : 'Word'}
             </Button>
-            {/* PDF — сразу открывает диалог печати */}
             <Button
               variant="outline"
               onClick={() => selectedInvoice && handlePrint(selectedInvoice)}

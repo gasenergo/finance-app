@@ -14,7 +14,7 @@ export async function getInvoices(accountId?: string) {
     .from('invoices')
     .select(`
       *,
-      account:accounts(id, name),
+      account:accounts(id, name, bank_name, account_number),
       client:clients(id, name, inn, director_name),
       creator:profiles(id, full_name),
       jobs:invoice_jobs(

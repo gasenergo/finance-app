@@ -66,8 +66,6 @@ function AccountCard({
   loading: boolean;
 }) {
   const [name, setName] = useState(account.name);
-  const [bankName, setBankName] = useState(account.bank_name || '');
-  const [accountNumber, setAccountNumber] = useState(account.account_number || '');
   const [taxRate, setTaxRate] = useState(String(account.tax_rate));
   const [fundRate, setFundRate] = useState(String(account.fund_contribution_rate));
   const [fundLimit, setFundLimit] = useState(String(account.fund_limit));
@@ -75,42 +73,19 @@ function AccountCard({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-blue-600" />
-            {account.name}
-          </CardTitle>
-          <Badge variant="info">
-            Фонд: {formatCurrency(account.current_fund_balance)}
-          </Badge>
-        </div>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-blue-600" />
+          {account.name}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Название счёта / филиала</label>
-            <Input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Основной счёт (Филиал 1)"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Банк</label>
-            <Input
-              value={bankName}
-              onChange={e => setBankName(e.target.value)}
-              placeholder="Т-Банк / Точка / Сбер"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Номер счёта (опционально)</label>
-            <Input
-              value={accountNumber}
-              onChange={e => setAccountNumber(e.target.value)}
-              placeholder="40802..."
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1.5">Название филиала / счёта</label>
+          <Input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Московский филиал"
+          />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -150,8 +125,8 @@ function AccountCard({
         <Button
           onClick={() => onSave(account.id, {
             name: name.trim() || account.name,
-            bank_name: bankName.trim() || null,
-            account_number: accountNumber.trim() || null,
+            bank_name: null,
+            account_number: null,
             tax_rate: parseFloat(taxRate) || 0,
             fund_contribution_rate: parseFloat(fundRate) || 0,
             fund_limit: parseFloat(fundLimit) || 0,
@@ -160,7 +135,7 @@ function AccountCard({
           loading={loading}
         >
           <Save className="h-4 w-4 mr-2" />
-          Сохранить настройки счёта
+          Сохранить настройки
         </Button>
       </CardContent>
     </Card>
@@ -218,11 +193,11 @@ export function SettingsTab({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Расчётные счета и филиалы</h2>
+        <h2 className="text-lg font-semibold">Филиалы и счета</h2>
         {!addingAccount && (
           <Button variant="outline" size="sm" onClick={() => setAddingAccount(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Добавить счёт
+            Добавить филиал
           </Button>
         )}
       </div>
@@ -231,11 +206,11 @@ export function SettingsTab({
         <Card className="border-dashed border-2">
           <CardContent className="p-4 flex flex-col sm:flex-row gap-3 items-end">
             <div className="flex-1 w-full">
-              <label className="block text-sm font-medium mb-1">Название нового счёта</label>
+              <label className="block text-sm font-medium mb-1">Название нового филиала</label>
               <Input
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
-                placeholder="Например: Филиал 3 (ИП Петров)"
+                placeholder="Например: Казанский филиал"
               />
             </div>
             <div className="flex gap-2">

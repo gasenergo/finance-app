@@ -22,6 +22,7 @@ export interface InvoiceDocData {
   clientName: string;
   clientInn: string | null;
   clientDirector: string | null;
+  templateSuffix?: string | null;
   items: InvoiceDocItem[];
   total: number;
 }
@@ -39,7 +40,6 @@ function money(n: number): string {
   return formatCurrency(n).replace(/\u00A0/g, ' ').replace('₽', '').trim();
 }
 
-// Цена за единицу: до 2 знаков после запятой (цена делится не всегда целиком)
 function money2(n: number): string {
   return new Intl.NumberFormat('ru-RU', {
     maximumFractionDigits: 2,
@@ -53,15 +53,19 @@ export function buildInvoiceDocData(data: {
   clientName: string;
   clientInn?: string | null;
   clientDirector?: string | null;
+  accountName?: string | null;
   items: Array<{ description: string; amount: number; quantity?: number; unit?: string; unitPrice?: number | null }>;
   total: number;
 }): InvoiceDocData {
+  const isSaratov = (data.accountName || '').toLowerCase().includes('саратов');
+
   return {
     number: data.invoiceNumber,
     createdAt: data.createdAt,
     clientName: data.clientName || '—',
     clientInn: data.clientInn || null,
     clientDirector: data.clientDirector || null,
+    templateSuffix: isSaratov ? '-saratov' : '',
     items: aggregateInvoiceItems(data.items).map(group => ({ ...group, unit: group.unit || invoiceConfig.defaultUnit })),
     total: data.total,
   };
@@ -110,33 +114,31 @@ function buildTemplateData(data: InvoiceDocData): TemplateData {
 
 // ============ WORD (.docx) ============
 
-let docxTemplatePromise: Promise<ArrayBuffer> | null = null;
+const docxTemplateCache = new Map<string, Promise<ArrayBuffer>>();
 
-function loadDocxTemplate(): Promise<ArrayBuffer> {
-  if (!docxTemplatePromise) {
-    docxTemplatePromise = fetch('/templates/invoice.docx').then(res => {
-      if (!res.ok) throw new Error('Файл invoice.docx не найден');
+function loadDocxTemplate(suffix = ''): Promise<ArrayBuffer> {
+  const path = `/templates/invoice${suffix}.docx`;
+  let promise = docxTemplateCache.get(path);
+  if (!promise) {
+    promise = fetch(path).then(res => {
+      if (!res.ok) throw new Error(`Файл ${path} не найден`);
       return res.arrayBuffer();
     });
+    docxTemplateCache.set(path, promise);
   }
-  return docxTemplatePromise;
+  return promise;
 }
 
 export async function downloadInvoiceWord(data: InvoiceDocData): Promise<void> {
-  const template = await loadDocxTemplate();
+  const template = await loadDocxTemplate(data.templateSuffix || '');
   const scalars = buildTemplateData(data);
 
-  // 1) Строки таблицы заполняем сами (docx-templates ломает раскладку при
-  //    дублировании строк — лишняя ячейка на весь номер колонки).
   const zip = await JSZip.loadAsync(template);
   const docPath = 'word/document.xml';
   const xml = await zip.file(docPath)!.async('string');
   zip.file(docPath, patchInvoiceTable(xml, scalars.items));
   const patched = await zip.generateAsync({ type: 'uint8array' });
 
-  // 2) Скалярные плейсхолдеры ({number}, {client}, {director_name_gen}, …)
-  //    корректно обрабатывает docx-templates (плейсхолдеры могут быть
-  //    разбиты по рансам — он это умеет).
   const report = await createReport({
     template: patched,
     cmdDelimiter: ['{', '}'],
@@ -160,16 +162,19 @@ function escHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-let htmlTemplatePromise: Promise<string> | null = null;
+const htmlTemplateCache = new Map<string, Promise<string>>();
 
-function loadHtmlTemplate(): Promise<string> {
-  if (!htmlTemplatePromise) {
-    htmlTemplatePromise = fetch('/templates/invoice.html').then(res => {
-      if (!res.ok) throw new Error('Файл invoice.html не найден');
+function loadHtmlTemplate(suffix = ''): Promise<string> {
+  const path = `/templates/invoice${suffix}.html`;
+  let promise = htmlTemplateCache.get(path);
+  if (!promise) {
+    promise = fetch(path).then(res => {
+      if (!res.ok) throw new Error(`Файл ${path} не найден`);
       return res.text();
     });
+    htmlTemplateCache.set(path, promise);
   }
-  return htmlTemplatePromise;
+  return promise;
 }
 
 function fillHtmlTemplate(template: string, data: TemplateData): string {
@@ -199,7 +204,7 @@ function escapeForHtml(data: TemplateData): TemplateData {
 }
 
 export async function buildInvoiceHtml(data: InvoiceDocData): Promise<string> {
-  const template = await loadHtmlTemplate();
+  const template = await loadHtmlTemplate(data.templateSuffix || '');
   const escaped = escapeForHtml(buildTemplateData(data));
   return fillHtmlTemplate(template, escaped as unknown as TemplateData);
 }
